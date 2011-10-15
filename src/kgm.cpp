@@ -1,8 +1,11 @@
-//============================================================================
-// Name        : kgm.cpp
-// Author      : krcallub
-// Version     : 0.1
-//============================================================================
+/**
+ *  \file kgm.cpp
+ *  \brief KGM
+ *  \author krcallub, varkoale
+ *  \version 0.1
+ *
+ *  --
+ */
 
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
@@ -35,20 +38,17 @@ struct uint8_t_d {
 	uint8_t value;
 };
 
-typedef property<vertex_kgm_state, uint8_t_d> vertex_kgm_state_property;
+//typedef property<vertex_kgm_state, uint8_t_d> vertex_kgm_state_property;
+typedef property<vertex_kgm_state, uint8_t> vertex_kgm_state_property;
 typedef adjacency_list<
 				listS, // std::list
 				vecS, // std::vector
 				undirectedS,
 				vertex_kgm_state_property> ugraph;
-
-
-
 typedef graph_traits<ugraph>::adjacency_iterator adj_iterator;
-
 typedef std::pair<adj_iterator, adj_iterator> kgm_state;
-
 typedef std::vector<kgm_state> kgm_stack;
+typedef property_map<ugraph, vertex_kgm_state>::type pmap_node_states;
 
 ostream& operator<< (ostream& out, const adj_iterator& ai)
 {
@@ -58,7 +58,14 @@ ostream& operator<< (ostream& out, const adj_iterator& ai)
 
 ostream& operator<< (ostream& out, const kgm_state& state )
 {
-	out << "[" << *(state.first) << "," << *(state.second) << "]";
+	out << "[";
+	kgm_state tmp (state);
+	while (tmp.first != tmp.second)
+	{
+		out << *(tmp.first) << " ";
+		++tmp.first;
+	}
+    out << "]";
 	return out;
 }
 
@@ -70,9 +77,44 @@ ostream& operator<< (ostream& out, const kgm_stack& stack)
 	return out;
 }
 
-void dfs(kgm_stack& stack, uint_fast16_t& maxDeg)
+void dfs_step(
+		kgm_stack& stack,
+		ugraph& graph,
+		pmap_node_states& nodeStates,
+		uint_fast32_t& maxDeg)
 {
+	if (stack.empty())
+		return;
+	std::cout << "stack: " << stack << std::endl;
 
+	if (stack.back().first == stack.back().second)
+	{	// no nodes remaining in this level
+		std::cout << "step back" << std::endl;
+		stack.pop_back();
+		if (stack.empty())
+			return;
+		nodeStates[*(stack.back().first)] = 0;
+		++(stack.back().first);
+		return;
+	}
+
+	std::cout << "state of node " << *(stack.back().first) << ": "
+			<< (unsigned int)nodeStates[*(stack.back().first)] << std::endl;
+
+	if ((unsigned int)nodeStates[*(stack.back().first)] > 0)
+	{	// node is already a part of current skeleton
+		++(stack.back().first);
+		return;
+	}
+
+	if (stack.back().first != stack.back().second)
+	{   // enter not currently visited node
+		std::cout << "entering: " << *(stack.back().first) << std::endl;
+		nodeStates[*(stack.back().first)] = 1;
+		kgm_state newState = adjacent_vertices(*(stack.back().first), graph);
+		stack.push_back(newState);
+		return;
+	}
 }
 
 int main() {
@@ -89,34 +131,36 @@ int main() {
 //	}
 
 
+
 	ugraph g(KGM_GRAPH_SIZE);
-//	adjacency_list<std::list<unsigned int>, std::vector<unsigned int>, undirectedS> g;
-//	add_edge((uint32_t)0,(uint32_t)0,g);
 	add_edge(0,1,g);
 	add_edge(0,2,g);
 	add_edge(1,1,g);
 	add_edge(2,1,g);
 	add_edge(2,3,g);
 	add_edge(3,5,g);
+	add_edge(2,6,g);
+	add_edge(5,6,g);
 
+	pmap_node_states nodeStates = get(vertex_kgm_state(), g);
 
+	kgm_state firstState = adjacent_vertices(0, g);
+	nodeStates[0] = 1;
+	kgm_stack stack;
+	stack.push_back(firstState);
 
-	std::cout << "adjacent vertices: ";
-	graph_traits<ugraph>::adjacency_iterator ai;
-	graph_traits<ugraph>::adjacency_iterator ai_end;
-	for (tie(ai, ai_end) = adjacent_vertices(2, g);
-	   ai != ai_end; ++ai)
+	uint_fast32_t maxDeg = 0, steps = 0;
+//	while (!stack.empty() && limit > 0)
+	while (!stack.empty())
 	{
-		graph_traits<ugraph>::adjacency_iterator copy_ai(ai);
-		kgm_state tmpState(copy_ai, ai_end);
-		std::cout << tmpState;
+		std::cout << "-------------" << std::endl;
+//		std::cout << "steps remaining: " << limit << std::endl;
+		dfs_step(stack,g,nodeStates,maxDeg);
+		++steps;
 	}
-	std::cout << std::endl;
 
-	kgm_state state1(ai,ai_end);
-
-	std::cout << "(" << *(state1.first) << "," << *(state1.second) << ")" << std::endl;
-
+	std::cout << "-------------" << std::endl;
+	cout << "TOTAL STEPS: " << steps << std::endl;
 
 	return 0;
 }
