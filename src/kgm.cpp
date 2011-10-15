@@ -21,10 +21,15 @@ using namespace std;
 using namespace boost::filesystem;
 using namespace boost;
 
-static const uint32_t KGM_GRAPH_SIZE = 20;
+static const uint32_t KGM_GRAPH_SIZE = 7;
+static const uint32_t KGM_START_NODE = 0;
 
-struct vertex_kgm_state {
-    typedef vertex_property_tag kind;
+struct kgm_vertex_properties {
+	kgm_vertex_properties() :
+		state(false),
+		degree(0) {}
+    bool state;
+    uint_fast16_t degree;
 };
 
 enum VERTEX_KGM_STATE {
@@ -33,22 +38,15 @@ enum VERTEX_KGM_STATE {
 	__VERTEX_KGM_STATE_SIZE
 };
 
-struct uint8_t_d {
-	uint8_t_d() : value(0) {}
-	uint8_t value;
-};
-
-//typedef property<vertex_kgm_state, uint8_t_d> vertex_kgm_state_property;
-typedef property<vertex_kgm_state, uint8_t> vertex_kgm_state_property;
 typedef adjacency_list<
 				listS, // std::list
 				vecS, // std::vector
 				undirectedS,
-				vertex_kgm_state_property> ugraph;
+				kgm_vertex_properties> ugraph;
 typedef graph_traits<ugraph>::adjacency_iterator adj_iterator;
 typedef std::pair<adj_iterator, adj_iterator> kgm_state;
 typedef std::vector<kgm_state> kgm_stack;
-typedef property_map<ugraph, vertex_kgm_state>::type pmap_node_states;
+//typedef property_map<ugraph, kgm_vertex_properties>::type pmap_vertex_properties;
 
 ostream& operator<< (ostream& out, const adj_iterator& ai)
 {
@@ -80,7 +78,6 @@ ostream& operator<< (ostream& out, const kgm_stack& stack)
 void dfs_step(
 		kgm_stack& stack,
 		ugraph& graph,
-		pmap_node_states& nodeStates,
 		uint_fast32_t& maxDeg)
 {
 	if (stack.empty())
@@ -93,15 +90,15 @@ void dfs_step(
 		stack.pop_back();
 		if (stack.empty())
 			return;
-		nodeStates[*(stack.back().first)] = 0;
+		graph[*(stack.back().first)].state = false;
 		++(stack.back().first);
 		return;
 	}
 
 	std::cout << "state of node " << *(stack.back().first) << ": "
-			<< (unsigned int)nodeStates[*(stack.back().first)] << std::endl;
+			<< (unsigned int)graph[*(stack.back().first)].state << std::endl;
 
-	if ((unsigned int)nodeStates[*(stack.back().first)] > 0)
+	if ((unsigned int)graph[*(stack.back().first)].state == true)
 	{	// node is already a part of current skeleton
 		++(stack.back().first);
 		return;
@@ -109,8 +106,14 @@ void dfs_step(
 
 	if (stack.back().first != stack.back().second)
 	{   // enter not currently visited node
+		uint_fast32_t currDegree = graph[*(stack.back().first)].degree;
+		std::cout << "degree of " << *(stack.back().first) << ": "
+				<< currDegree << std::endl;
+		if (currDegree > maxDeg)
+			maxDeg = currDegree;
+
 		std::cout << "entering: " << *(stack.back().first) << std::endl;
-		nodeStates[*(stack.back().first)] = 1;
+		graph[*(stack.back().first)].state = true;
 		kgm_state newState = adjacent_vertices(*(stack.back().first), graph);
 		stack.push_back(newState);
 		return;
@@ -130,7 +133,9 @@ int main() {
 //		return -2;
 //	}
 
-
+	// TODO
+	// load graph from file
+	// load property: degree
 
 	ugraph g(KGM_GRAPH_SIZE);
 	add_edge(0,1,g);
@@ -142,20 +147,17 @@ int main() {
 	add_edge(2,6,g);
 	add_edge(5,6,g);
 
-	pmap_node_states nodeStates = get(vertex_kgm_state(), g);
-
-	kgm_state firstState = adjacent_vertices(0, g);
-	nodeStates[0] = 1;
+	kgm_state firstState = adjacent_vertices(KGM_START_NODE, g);
+	g[KGM_START_NODE].state = true;
 	kgm_stack stack;
 	stack.push_back(firstState);
 
-	uint_fast32_t maxDeg = 0, steps = 0;
-//	while (!stack.empty() && limit > 0)
+	uint_fast32_t steps = 0;
+	uint_fast16_t maxDegree = 1;
 	while (!stack.empty())
 	{
 		std::cout << "-------------" << std::endl;
-//		std::cout << "steps remaining: " << limit << std::endl;
-		dfs_step(stack,g,nodeStates,maxDeg);
+		dfs_step(stack, g, maxDegree);
 		++steps;
 	}
 
