@@ -67,40 +67,50 @@ struct dfs_state {
 };
 typedef std::vector<dfs_state> dfs_stack;
 
-bool iterate_dfs_state(dfs_state& state, const ugraph& graph)
+ostream& operator<< (ostream& out, const kgm_adjacency_iterator& ai);
+ostream& operator<< (ostream& out, const kgm_vertex_iterator& ai);
+ostream& operator<< (ostream& out, const dfs_state& state);
+ostream& operator<< (ostream& out, const std::pair<dfs_state,ugraph>& state);
+ostream& operator<< (ostream& out, const dfs_stack& stack);
+
+bool iterate_dfs_state(dfs_state& dfsState, const ugraph& graph)
 {
-    for(;;)
+    for (++dfsState.a_it; dfsState.a_it != dfsState.a_it_end; ++dfsState.a_it)
     {
-        ++state.a_it;
-        if (state.a_it == state.a_it_end)
-            break;
-        if (!graph[*(state.a_it)].state)
+        if (graph[*(dfsState.a_it)].state == false)
             return true;
     }
-    for(;;)
+    for (++dfsState.v_it; dfsState.v_it != dfsState.v_it_end; ++dfsState.v_it)
     {
-        ++state.v_it;
-        if (state.v_it == state.v_it_end)
-            return false;
-        tie(state.a_it,state.a_it_end) = adjacent_vertices(*(state.v_it), graph);
-        for(;;)
+        if (graph[*(dfsState.v_it)].state == false)
+            continue;
+
+        for(tie(dfsState.a_it, dfsState.a_it_end) = adjacent_vertices(*(dfsState.v_it),graph);
+                dfsState.a_it != dfsState.a_it_end; ++dfsState.a_it)
         {
-            if (state.a_it == state.a_it_end)
-                break;
-            if (!graph[*(state.a_it)].state)
+            if (graph[*(dfsState.a_it)].state == false)
                 return true;
-            ++state.a_it;
         }
     }
-    return true;
+    return false;
 }
 
-void create_dfs_state(dfs_state& newState, const ugraph& graph)
+bool create_dfs_state(dfs_state& newState, const ugraph& graph)
 {
-   tie(newState.v_it, newState.v_it_end) = vertices(graph);
-   tie(newState.a_it, newState.a_it_end) = adjacent_vertices(*(newState.v_it),graph);
-   if (newState.a_it == newState.a_it_end || graph[*(newState.a_it)].state)
-   while (iterate_dfs_state(newState, graph));
+    for (tie(newState.v_it, newState.v_it_end) = vertices(graph);
+            newState.v_it != newState.v_it_end; ++newState.v_it)
+    {
+        if (graph[*(newState.v_it)].state == false)
+            continue;
+
+        for(tie(newState.a_it, newState.a_it_end) = adjacent_vertices(*(newState.v_it),graph);
+                newState.a_it != newState.a_it_end; ++newState.a_it)
+        {
+            if (graph[*(newState.a_it)].state == false)
+                return true;
+        }
+    }
+    return false;
 }
 
 ostream& operator<< (ostream& out, const kgm_adjacency_iterator& ai)
@@ -218,17 +228,28 @@ int main() {
     add_edge(5,6,g);
 
     dfs_state firstState;
-    create_dfs_state(firstState,g);
-
-
+    if (create_dfs_state(firstState,g))
+//        std::cout << firstState << std::endl;
     std::cout << make_pair(firstState,g) << std::endl;
+
     g[KGM_START_NODE].state = true;
+    if (create_dfs_state(firstState,g))
+//        std::cout << firstState << std::endl;
     std::cout << make_pair(firstState,g) << std::endl;
+
     g[1].state = true;
+    if (create_dfs_state(firstState,g))
+//        std::cout << firstState << std::endl;
     std::cout << make_pair(firstState,g) << std::endl;
+
     g[2].state = true;
+    if (create_dfs_state(firstState,g))
+//        std::cout << firstState << std::endl;
     std::cout << make_pair(firstState,g) << std::endl;
+
     g[5].state = true;
+    if (create_dfs_state(firstState,g))
+//        std::cout << firstState << std::endl;
     std::cout << make_pair(firstState,g) << std::endl;
 
 //    do {std::cout << firstState << std::endl;}
@@ -249,7 +270,7 @@ int main() {
 //        ++steps;
 //    }
 //
-//    std::cout << "-------------" << std::endl;
+    std::cout << "-------------" << std::endl;
 //    cout << "TOTAL STEPS: " << steps << std::endl;
 
     return 0;
