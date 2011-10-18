@@ -11,13 +11,18 @@
 #include <boost/filesystem/operations.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/tuple/tuple.hpp>
+#include <boost/algorithm/string.hpp>
+#include <boost/timer.hpp>
+#include <boost/smart_ptr.hpp>
 
 #include <algorithm>
 #include <string>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <list>
 #include <utility>
+#include <fstream>
 
 #include <stdint.h>
 
@@ -25,8 +30,11 @@ using namespace std;
 using namespace boost::filesystem;
 using namespace boost;
 
-static int32_t KGM_GRAPH_SIZE = 7;
-static const int32_t KGM_START_NODE = 0;
+static int32_t KGM_GRAPH_SIZE;
+static int32_t KGM_UPPER_BOUND = 30;
+static int32_t KGM_LOWER_BOUND = 2;
+static int32_t KGM_START_NODE = 0;
+static path graphSource;
 
 struct kgm_vertex_properties {
     kgm_vertex_properties() :
@@ -156,25 +164,16 @@ ostream& operator<< (ostream& out, const dfs_stack& stack)
 void dfs_step(
         dfs_stack& stack,
         degree_stack& dstack,
-        ugraph& graph)
+        ugraph& graph,
+        uint16_t& degreeLimit)
 {
     if (stack.empty())
         return;
 
-    std::cout << std::endl;
-    std::cout << graph[0].degree << " ";
-    std::cout << graph[1].degree << " ";
-    std::cout << graph[2].degree << " ";
-    std::cout << graph[3].degree << " ";
-    std::cout << graph[4].degree << " ";
-    std::cout << graph[5].degree << " ";
-    std::cout << graph[6].degree << " ";
-    std::cout << std::endl;
-    std::cout << "max deg: " << std::endl;
-    for (degree_stack::iterator it = dstack.begin(); it != dstack.end(); ++it)
-        std::cout << *it << " ";
-    std::cout << std::endl;
-    std::cout << stack << std::endl;
+    if (degreeLimit <= KGM_LOWER_BOUND){
+        stack.clear();
+        return;
+    }
 
     if (graph[*(stack.back().a_it)].state == false)
     {
@@ -184,13 +183,27 @@ void dfs_step(
 
         dstack.push_back(std::max(graph[*(stack.back().v_it)].degree, dstack.back()));
 
+        if (dstack.back() >= degreeLimit)
+        {   // not going to be a better solution
+            dstack.pop_back();
+            graph[*(stack.back().v_it)].degree -= 1;
+            graph[*(stack.back().a_it)].degree = 0;
+            graph[*(stack.back().a_it)].state = false;
+
+            if (!iterate_dfs_state(stack.back(), graph))
+                stack.pop_back();
+            return;
+        }
+
         dfs_state newState;
         if (create_dfs_state(newState, graph))
             stack.push_back(newState);
         else
         {
-            std::cout << "HIT BOTTOM: " << std::endl;
+            std::cout << "New spanning tree - degree: "<< dstack.back() << std::endl;
+            degreeLimit = dstack.back();
             // TODO possible spanning tree improvement
+            std::cout << stack << std::endl;
         }
         return;
     }
@@ -207,52 +220,76 @@ void dfs_step(
 }
 
 int main() {
-    path graphSource("u20.graph");
-//    if (!is_regular_file(graphSource))
-//    {
-//        cout << "Input file not regular." << endl;
-//        return -1;
-//    }
-//    if (boost::filesystem::is_empty(graphSource))
-//    {
-//        cout << "Input file is empty" << endl;
-//        return -2;
-//    }
+    graphSource = "u_40_20.graph";
 
-    // TODO
-    // load graph from file
+    if (!is_regular_file(graphSource))
+    {
+        std::cerr << "Input file not regular." << std::endl;
+        return -1;
+    }
+    if (boost::filesystem::is_empty(graphSource))
+    {
+        std::cerr << "Input file is empty" << std::endl;
+        return -2;
+    }
+
+    std::ifstream in(graphSource.string().c_str());
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    std::string contents(buffer.str());
+
+    std::vector<std::string> lines;
+    boost::split(lines, contents, boost::is_any_of("\n"));
+
+    int m = lines.size()-2, n = lines[lines.size()-2].length();
+    std::cout << "loaded graph of size: " << m << "*" << n << std::endl;
+    KGM_GRAPH_SIZE = n;
+    if (m != n && m <= 1)
+    {
+        std::cerr << "Input data error" << std::endl;
+        return -3;
+    }
 
     ugraph g(KGM_GRAPH_SIZE);
-    add_edge(0,1,g);
-    add_edge(0,2,g);
-    add_edge(1,1,g);
-    add_edge(2,1,g);
-    add_edge(2,3,g);
-    add_edge(3,5,g);
-    add_edge(2,6,g);
-    add_edge(5,6,g);
+    std::vector<std::string>::iterator it = lines.begin();
+    ++it;
+    for (int i = 0; it != lines.end(); ++it, ++i)
+    {
+        if ((*it).empty())
+            continue;
+        for (int j = 0; j <= i; ++j)
+        {
+            if ((*it)[j] == '1')
+                add_edge(i,j,g);
+        }
+    }
 
     dfs_state firstState;
     g[KGM_START_NODE].state = true;
-    if (create_dfs_state(firstState,g))
-        std::cout << "First state: "<< firstState << std::endl;
+    if (!create_dfs_state(firstState,g))
+    {
+        std::cerr << "Failed to initialize first state" << std::endl;
+        return -4;
+    }
 
     dfs_stack stack;
     stack.push_back(firstState);
     degree_stack dstack;
     dstack.push_back(0);
 
-    uint32_t steps = 0, depth = 0;
-    uint16_t maxDegree = 1;
-    while (!stack.empty() && steps < 1000)
+    uint16_t minSPdegree = KGM_UPPER_BOUND;
+    uint32_t steps = 0;
+    boost::scoped_ptr<boost::timer> timer (new boost::timer);
+    while (!stack.empty())
     {
-//        std::cout << "-------------" << std::endl;
-        dfs_step(stack, dstack, g);
+        dfs_step(stack, dstack, g, minSPdegree);
         ++steps;
     }
-
+    double time = timer->elapsed();
+    timer.reset();
     std::cout << "-------------" << std::endl;
-    cout << "TOTAL STEPS: " << steps << std::endl;
+    std::cout << "TOTAL STEPS: " << steps << std::endl;
+    std::cout << "In time: " << time << std::endl;
 
     return 0;
 }
