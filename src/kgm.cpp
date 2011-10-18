@@ -7,8 +7,6 @@
  *  --
  */
 
-#include <boost/filesystem/path.hpp>
-#include <boost/filesystem/operations.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/algorithm/string.hpp>
@@ -24,11 +22,12 @@
 #include <list>
 #include <utility>
 #include <fstream>
+#include <stack>
 
 #include <stdint.h>
 
 using namespace std;
-using namespace boost::filesystem;
+//using namespace boost::filesystem;
 using namespace boost;
 
 static int32_t KGM_GRAPH_SIZE;
@@ -36,7 +35,7 @@ static int32_t KGM_UPPER_BOUND = 30;
 static int32_t KGM_LOWER_BOUND = 2;
 static int32_t KGM_START_NODE = 0;
 static uint64_t KGM_REPORT_INTERVAL = 0x10000000;
-static path graphSource;
+//static path graphSource;
 
 struct kgm_vertex_properties {
     kgm_vertex_properties() :
@@ -233,20 +232,20 @@ int main(int argc, char ** argv) {
     if (filename.empty())
         return -1;
 
-    graphSource = boost::filesystem::path(filename);
+//    graphSource = boost::filesystem::path(filename);
 
-    if (!is_regular_file(graphSource))
-    {
-        std::cerr << "Input file not regular." << std::endl;
-        return -1;
-    }
-    if (boost::filesystem::is_empty(graphSource))
-    {
-        std::cerr << "Input file is empty" << std::endl;
-        return -2;
-    }
+//    if (!is_regular_file(graphSource))
+//    {
+//        std::cerr << "Input file not regular." << std::endl;
+//        return -1;
+//    }
+//    if (boost::filesystem::is_empty(graphSource))
+//    {
+//        std::cerr << "Input file is empty" << std::endl;
+//        return -2;
+//    }
 
-    std::ifstream in(graphSource.string().c_str());
+    std::ifstream in(filename.c_str());
     std::stringstream buffer;
     buffer << in.rdbuf();
     std::string contents(buffer.str());
