@@ -11,18 +11,21 @@
 #include <boost/filesystem/operations.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/tuple/tuple.hpp>
+
+#include <algorithm>
 #include <string>
 #include <iostream>
-#include <stdint.h>
 #include <vector>
 #include <list>
 #include <utility>
+
+#include <stdint.h>
 
 using namespace std;
 using namespace boost::filesystem;
 using namespace boost;
 
-static const int32_t KGM_GRAPH_SIZE = 7;
+static int32_t KGM_GRAPH_SIZE = 7;
 static const int32_t KGM_START_NODE = 0;
 
 struct kgm_vertex_properties {
@@ -32,14 +35,6 @@ struct kgm_vertex_properties {
     bool state;
     uint16_t degree;
 };
-
-//struct kgm_skeleton_node {
-//	kgm_skeleton_node() :
-//		node(0),
-//		maxDegree(INT32_MAX) {}
-//	int32_t node;
-//	uint16_t maxDegree;
-//};
 
 enum VERTEX_KGM_STATE {
     NEW,
@@ -66,6 +61,8 @@ struct dfs_state {
     kgm_adjacency_iterator a_it_end;
 };
 typedef std::vector<dfs_state> dfs_stack;
+typedef std::stack<kgm_edge_descriptor> kgm_stack;
+typedef std::vector<uint16_t> degree_stack;
 
 ostream& operator<< (ostream& out, const kgm_adjacency_iterator& ai);
 ostream& operator<< (ostream& out, const kgm_vertex_iterator& ai);
@@ -156,50 +153,58 @@ ostream& operator<< (ostream& out, const dfs_stack& stack)
     return out;
 }
 
-//void dfs_step(
-//        dfs_stack& stack,
-//        ugraph& graph,
-//        uint_fast32_t& maxDeg)
-//{
-//    if (stack.empty())
-//        return;
-//    std::cout << "stack: " << stack << std::endl;
-//
-//    if (stack.back().first == stack.back().second)
-//    {    // no nodes remaining in this level
-//        std::cout << "step back" << std::endl;
-//        stack.pop_back();
-//        if (stack.empty())
-//            return;
-//        graph[*(stack.back().first)].state = false;
-//        ++(stack.back().first);
-//        return;
-//    }
-//
-//    std::cout << "state of node " << *(stack.back().first) << ": "
-//            << (unsigned int)graph[*(stack.back().first)].state << std::endl;
-//
-//    if ((unsigned int)graph[*(stack.back().first)].state == true)
-//    {    // node is already a part of current skeleton
-//        ++(stack.back().first);
-//        return;
-//    }
-//
-//    if (stack.back().first != stack.back().second)
-//    {   // enter not currently visited node
-//        uint_fast32_t currDegree = graph[*(stack.back().first)].degree;
-//        std::cout << "degree of " << *(stack.back().first) << ": "
-//                << currDegree << std::endl;
-//        if (currDegree > maxDeg)
-//            maxDeg = currDegree;
-//
-//        std::cout << "entering: " << *(stack.back().first) << std::endl;
-//        graph[*(stack.back().first)].state = true;
-//        dfs_state newState = adjacent_vertices(*(stack.back().first), graph);
-//        stack.push_back(newState);
-//        return;
-//    }
-//}
+void dfs_step(
+        dfs_stack& stack,
+        degree_stack& dstack,
+        ugraph& graph)
+{
+    if (stack.empty())
+        return;
+
+    std::cout << std::endl;
+    std::cout << graph[0].degree << " ";
+    std::cout << graph[1].degree << " ";
+    std::cout << graph[2].degree << " ";
+    std::cout << graph[3].degree << " ";
+    std::cout << graph[4].degree << " ";
+    std::cout << graph[5].degree << " ";
+    std::cout << graph[6].degree << " ";
+    std::cout << std::endl;
+    std::cout << "max deg: " << std::endl;
+    for (degree_stack::iterator it = dstack.begin(); it != dstack.end(); ++it)
+        std::cout << *it << " ";
+    std::cout << std::endl;
+    std::cout << stack << std::endl;
+
+    if (graph[*(stack.back().a_it)].state == false)
+    {
+        graph[*(stack.back().v_it)].degree += 1;
+        graph[*(stack.back().a_it)].degree = 1;
+        graph[*(stack.back().a_it)].state = true;
+
+        dstack.push_back(std::max(graph[*(stack.back().v_it)].degree, dstack.back()));
+
+        dfs_state newState;
+        if (create_dfs_state(newState, graph))
+            stack.push_back(newState);
+        else
+        {
+            std::cout << "HIT BOTTOM: " << std::endl;
+            // TODO possible spanning tree improvement
+        }
+        return;
+    }
+
+    dfs_state prev (stack.back());
+    graph[*(prev.v_it)].degree -= 1;
+    graph[*(prev.a_it)].degree = 0;
+    graph[*(prev.a_it)].state = false;
+
+    dstack.pop_back();
+
+    if (!iterate_dfs_state(stack.back(), graph))
+        stack.pop_back();
+}
 
 int main() {
     path graphSource("u20.graph");
@@ -228,50 +233,26 @@ int main() {
     add_edge(5,6,g);
 
     dfs_state firstState;
-    if (create_dfs_state(firstState,g))
-//        std::cout << firstState << std::endl;
-    std::cout << make_pair(firstState,g) << std::endl;
-
     g[KGM_START_NODE].state = true;
     if (create_dfs_state(firstState,g))
-//        std::cout << firstState << std::endl;
-    std::cout << make_pair(firstState,g) << std::endl;
+        std::cout << "First state: "<< firstState << std::endl;
 
-    g[1].state = true;
-    if (create_dfs_state(firstState,g))
-//        std::cout << firstState << std::endl;
-    std::cout << make_pair(firstState,g) << std::endl;
+    dfs_stack stack;
+    stack.push_back(firstState);
+    degree_stack dstack;
+    dstack.push_back(0);
 
-    g[2].state = true;
-    if (create_dfs_state(firstState,g))
-//        std::cout << firstState << std::endl;
-    std::cout << make_pair(firstState,g) << std::endl;
-
-    g[5].state = true;
-    if (create_dfs_state(firstState,g))
-//        std::cout << firstState << std::endl;
-    std::cout << make_pair(firstState,g) << std::endl;
-
-//    do {std::cout << firstState << std::endl;}
-//    while (iterate_dfs_state(firstState,g));
-
-
-//    adjacent_vertices(KGM_START_NODE, g);
-//    g[KGM_START_NODE].state = true;
-//    dfs_stack stack;
-//    stack.push_back(firstState);
-//
-//    uint_fast32_t steps = 0;
-//    uint_fast16_t maxDegree = 1;
-//    while (!stack.empty())
-//    {
+    uint32_t steps = 0, depth = 0;
+    uint16_t maxDegree = 1;
+    while (!stack.empty() && steps < 1000)
+    {
 //        std::cout << "-------------" << std::endl;
-////        dfs_step(stack, g, maxDegree);
-//        ++steps;
-//    }
-//
+        dfs_step(stack, dstack, g);
+        ++steps;
+    }
+
     std::cout << "-------------" << std::endl;
-//    cout << "TOTAL STEPS: " << steps << std::endl;
+    cout << "TOTAL STEPS: " << steps << std::endl;
 
     return 0;
 }
