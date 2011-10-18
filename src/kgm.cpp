@@ -14,6 +14,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/timer.hpp>
 #include <boost/smart_ptr.hpp>
+#include <boost/program_options.hpp>
 
 #include <algorithm>
 #include <string>
@@ -34,6 +35,7 @@ static int32_t KGM_GRAPH_SIZE;
 static int32_t KGM_UPPER_BOUND = 30;
 static int32_t KGM_LOWER_BOUND = 2;
 static int32_t KGM_START_NODE = 0;
+static uint64_t KGM_REPORT_INTERVAL = 0x10000000;
 static path graphSource;
 
 struct kgm_vertex_properties {
@@ -219,8 +221,19 @@ void dfs_step(
         stack.pop_back();
 }
 
-int main() {
-    graphSource = "u_40_20.graph";
+int main(int argc, char ** argv) {
+
+    if (argc <= 1)
+    {
+        std::cerr << "Not enough arguments." << std::endl;
+        return -1;
+    }
+
+    std::string filename (argv[1]);
+    if (filename.empty())
+        return -1;
+
+    graphSource = boost::filesystem::path(filename);
 
     if (!is_regular_file(graphSource))
     {
@@ -278,11 +291,18 @@ int main() {
     dstack.push_back(0);
 
     uint16_t minSPdegree = KGM_UPPER_BOUND;
-    uint32_t steps = 0;
+    uint64_t steps = 0;
+    uint64_t psteps = KGM_REPORT_INTERVAL;
     boost::scoped_ptr<boost::timer> timer (new boost::timer);
     while (!stack.empty())
     {
         dfs_step(stack, dstack, g, minSPdegree);
+        if (steps >= psteps)
+        {
+            std::cout << "Stack at " << timer->elapsed() << ":" << std::endl
+                    << make_pair(stack.front(),g) << std::endl;
+            psteps += KGM_REPORT_INTERVAL;
+        }
         ++steps;
     }
     double time = timer->elapsed();
