@@ -232,19 +232,6 @@ int main(int argc, char ** argv) {
     if (filename.empty())
         return -1;
 
-//    graphSource = boost::filesystem::path(filename);
-
-//    if (!is_regular_file(graphSource))
-//    {
-//        std::cerr << "Input file not regular." << std::endl;
-//        return -1;
-//    }
-//    if (boost::filesystem::is_empty(graphSource))
-//    {
-//        std::cerr << "Input file is empty" << std::endl;
-//        return -2;
-//    }
-
     std::ifstream in(filename.c_str());
     std::stringstream buffer;
     buffer << in.rdbuf();
