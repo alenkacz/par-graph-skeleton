@@ -104,12 +104,12 @@ bool iterate_dfs_state(dfs_state& dfsState, const ugraph& graph)
 bool create_dfs_state(dfs_state& newState, const ugraph& graph)
 {
     for (tie(newState.v_it, newState.v_it_end) = vertices(graph);
-            newState.v_it != newState.v_it_end; ++newState.v_it)
+            newState.v_it != newState.v_it_end; ++newState.v_it) // nodes that are part of the skeleton
     {
         if (graph[*(newState.v_it)].state == false)
             continue;
 
-        for(tie(newState.a_it, newState.a_it_end) = adjacent_vertices(*(newState.v_it),graph);
+        for(tie(newState.a_it, newState.a_it_end) = adjacent_vertices(*(newState.v_it),graph); // neighbours
                 newState.a_it != newState.a_it_end; ++newState.a_it)
         {
             if (graph[*(newState.a_it)].state == false)
@@ -166,7 +166,7 @@ void dfs_step(
         dfs_stack& stack,
         degree_stack& dstack,
         ugraph& graph,
-        uint16_t& degreeLimit)
+        uint16_t& degreeLimit) // so far the lowest skeleton degree
 {
     if (stack.empty())
         return;
@@ -216,7 +216,7 @@ void dfs_step(
 
     dstack.pop_back();
 
-    if (!iterate_dfs_state(stack.back(), graph))
+    if (!iterate_dfs_state(stack.back(), graph)) // not able to iterate further, branch is removed from the stack
         stack.pop_back();
 }
 
@@ -252,11 +252,11 @@ int main(int argc, char ** argv) {
     ugraph g(KGM_GRAPH_SIZE);
     std::vector<std::string>::iterator it = lines.begin();
     ++it;
-    for (int i = 0; it != lines.end(); ++it, ++i)
+    for (uint32_t i = 0; it != lines.end(); ++it, ++i)
     {
         if ((*it).empty())
             continue;
-        for (int j = 0; j <= i; ++j)
+        for (uint32_t j = 0; j <= i; ++j)
         {
             if ((*it)[j] == '1')
                 add_edge(i,j,g);
@@ -273,7 +273,7 @@ int main(int argc, char ** argv) {
 
     dfs_stack stack;
     stack.push_back(firstState);
-    degree_stack dstack;
+    degree_stack dstack; // max degree
     dstack.push_back(0);
 
     uint16_t minSPdegree = KGM_UPPER_BOUND;
