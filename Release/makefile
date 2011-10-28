@@ -44,7 +44,7 @@ all: kgm
 kgm: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C++ Linker'
-	g++ -L../lib/debug_x86 -o "kgm" $(OBJS) $(USER_OBJS) $(LIBS)
+	mpic++ -L../lib/debug_x86 -o "kgm" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

@@ -25,10 +25,15 @@
 #include <stack>
 
 #include <stdint.h>
+#include "mpi.h"
 
 using namespace std;
 //using namespace boost::filesystem;
 using namespace boost;
+
+static int32_t MPI_RANK;
+static int32_t MPI_PROCESSES;
+static char	message[100];
 
 static int32_t KGM_GRAPH_SIZE;
 static int32_t KGM_UPPER_BOUND = 30;
@@ -72,6 +77,8 @@ struct dfs_state {
 typedef std::vector<dfs_state> dfs_stack;
 typedef std::stack<kgm_edge_descriptor> kgm_stack;
 typedef std::vector<uint16_t> degree_stack;
+
+
 
 ostream& operator<< (ostream& out, const kgm_adjacency_iterator& ai);
 ostream& operator<< (ostream& out, const kgm_vertex_iterator& ai);
@@ -227,6 +234,13 @@ int main(int argc, char ** argv) {
         std::cerr << "Not enough arguments." << std::endl;
         return -1;
     }
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &MPI_RANK); // my rank
+    MPI_Comm_size(MPI_COMM_WORLD, &MPI_PROCESSES); // number of processes
+    MPI_Barrier(MPI_COMM_WORLD); // loading all processes
+
+    //std::cout << "Greetings from process " << MPI_RANK << "\n";
 
     std::string filename (argv[1]);
     if (filename.empty())
