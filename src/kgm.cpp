@@ -31,9 +31,22 @@ using namespace std;
 //using namespace boost::filesystem;
 using namespace boost;
 
-static int32_t MPI_RANK;
+static int32_t MPI_MY_RANK;
 static int32_t MPI_PROCESSES;
-static char	message[100];
+
+enum state { // states of the processes
+	WORKING,
+};
+
+#define CHECK_MSG_AMOUNT  100
+
+#define MSG_WORK_REQUEST 1000
+#define MSG_WORK_SENT    1001
+#define MSG_WORK_NOWORK  1002
+#define MSG_TOKEN        1003
+#define MSG_FINISH       1004
+#define MSG_NEW_SOLUTION	1005
+
 
 static int32_t KGM_GRAPH_SIZE;
 static int32_t KGM_UPPER_BOUND = 30;
@@ -78,7 +91,7 @@ typedef std::vector<dfs_state> dfs_stack;
 typedef std::stack<kgm_edge_descriptor> kgm_stack;
 typedef std::vector<uint16_t> degree_stack;
 
-
+ugraph g;
 
 ostream& operator<< (ostream& out, const kgm_adjacency_iterator& ai);
 ostream& operator<< (ostream& out, const kgm_vertex_iterator& ai);
@@ -227,6 +240,92 @@ void dfs_step(
         stack.pop_back();
 }
 
+void sendInputToOtherProcesses(std::string contents) {
+
+}
+
+void readInputFromFile(std::string filename) {
+	std::ifstream in(filename.c_str());
+	std::stringstream buffer;
+	buffer << in.rdbuf();
+	std::string contents(buffer.str());
+
+	sendInputToOtherProcesses(contents);
+
+	std::vector<std::string> lines;
+	boost::split(lines, contents, boost::is_any_of("\n"));
+
+	int m = lines.size()-2, n = lines[lines.size()-2].length();
+	std::cout << "loaded graph of size: " << m << "*" << n << std::endl;
+	KGM_GRAPH_SIZE = n;
+	if (m != n && m <= 1)
+	{
+		std::cerr << "Input data error" << std::endl;
+		exit(-3);
+	}
+
+	g = ugraph(KGM_GRAPH_SIZE);
+	std::vector<std::string>::iterator it = lines.begin();
+	++it;
+	for (uint32_t i = 0; it != lines.end(); ++it, ++i)
+	{
+		if ((*it).empty())
+			continue;
+		for (uint32_t j = 0; j <= i; ++j)
+		{
+			if ((*it)[j] == '1')
+				add_edge(i,j,g);
+		}
+	}
+}
+
+bool hasExtraWork() {
+	// TODO - asi Lubos? :o) detekce toho, jestli mame co delit
+	return false;
+}
+
+void sendWork() {
+	// TODO - asi Lubos? :o) serializovat a poslat
+}
+
+void receiveMessage() {
+	int flag = 0;
+	MPI_Status status;
+
+	MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+	if (flag)
+	{
+	  switch (status.MPI_TAG)
+	  {
+		 case MSG_WORK_REQUEST :
+			 if(hasExtraWork()) {
+				 sendWork();
+			 } else {
+
+			 }
+			 break;
+		 case MSG_WORK_SENT :
+			  break;
+		 case MSG_WORK_NOWORK :
+			  break;
+		 case MSG_TOKEN :
+			  break;
+		 case MSG_NEW_SOLUTION :
+			  break;
+		 case MSG_FINISH :
+		      MPI_Finalize();
+		      exit (0);
+		      break;
+		 default : // error
+			 break;
+	  }
+	}
+}
+
+void requestWork() {
+
+}
+
 int main(int argc, char ** argv) {
 
     if (argc <= 1)
@@ -236,80 +335,59 @@ int main(int argc, char ** argv) {
     }
 
     MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &MPI_RANK); // my rank
+    MPI_Comm_rank(MPI_COMM_WORLD, &MPI_MY_RANK); // my rank
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_PROCESSES); // number of processes
     MPI_Barrier(MPI_COMM_WORLD); // loading all processes
 
-    //std::cout << "Greetings from process " << MPI_RANK << "\n";
-
     std::string filename (argv[1]);
-    if (filename.empty())
-        return -1;
+	if (filename.empty())
+		return -1;
 
-    std::ifstream in(filename.c_str());
-    std::stringstream buffer;
-    buffer << in.rdbuf();
-    std::string contents(buffer.str());
+	readInputFromFile(filename);
 
-    std::vector<std::string> lines;
-    boost::split(lines, contents, boost::is_any_of("\n"));
+    if(MPI_MY_RANK == 0) {
+		dfs_state firstState;
+		g[KGM_START_NODE].state = true;
+		if (!create_dfs_state(firstState,g))
+		{
+			std::cerr << "Failed to initialize first state" << std::endl;
+			return -4;
+		}
 
-    int m = lines.size()-2, n = lines[lines.size()-2].length();
-    std::cout << "loaded graph of size: " << m << "*" << n << std::endl;
-    KGM_GRAPH_SIZE = n;
-    if (m != n && m <= 1)
-    {
-        std::cerr << "Input data error" << std::endl;
-        return -3;
+		dfs_stack stack;
+		stack.push_back(firstState);
+		degree_stack dstack; // max degree
+		dstack.push_back(0);
+
+		uint16_t minSPdegree = KGM_UPPER_BOUND;
+		uint64_t steps = 0;
+		uint64_t psteps = KGM_REPORT_INTERVAL;
+		boost::scoped_ptr<boost::timer> timer (new boost::timer);
+
+		while (!stack.empty())
+		{
+			if ((psteps % CHECK_MSG_AMOUNT)==0)
+			{
+				receiveMessage();
+			}
+
+			dfs_step(stack, dstack, g, minSPdegree);
+			if (steps >= psteps)
+			{
+				std::cout << "Stack at " << timer->elapsed() << ":" << std::endl
+						<< make_pair(stack.front(),g) << std::endl;
+				psteps += KGM_REPORT_INTERVAL;
+			}
+			++steps;
+		}
+		double time = timer->elapsed();
+		timer.reset();
+		std::cout << "-------------" << std::endl;
+		std::cout << "TOTAL STEPS: " << steps << std::endl;
+		std::cout << "In time: " << time << std::endl;
     }
 
-    ugraph g(KGM_GRAPH_SIZE);
-    std::vector<std::string>::iterator it = lines.begin();
-    ++it;
-    for (uint32_t i = 0; it != lines.end(); ++it, ++i)
-    {
-        if ((*it).empty())
-            continue;
-        for (uint32_t j = 0; j <= i; ++j)
-        {
-            if ((*it)[j] == '1')
-                add_edge(i,j,g);
-        }
-    }
-
-    dfs_state firstState;
-    g[KGM_START_NODE].state = true;
-    if (!create_dfs_state(firstState,g))
-    {
-        std::cerr << "Failed to initialize first state" << std::endl;
-        return -4;
-    }
-
-    dfs_stack stack;
-    stack.push_back(firstState);
-    degree_stack dstack; // max degree
-    dstack.push_back(0);
-
-    uint16_t minSPdegree = KGM_UPPER_BOUND;
-    uint64_t steps = 0;
-    uint64_t psteps = KGM_REPORT_INTERVAL;
-    boost::scoped_ptr<boost::timer> timer (new boost::timer);
-    while (!stack.empty())
-    {
-        dfs_step(stack, dstack, g, minSPdegree);
-        if (steps >= psteps)
-        {
-            std::cout << "Stack at " << timer->elapsed() << ":" << std::endl
-                    << make_pair(stack.front(),g) << std::endl;
-            psteps += KGM_REPORT_INTERVAL;
-        }
-        ++steps;
-    }
-    double time = timer->elapsed();
-    timer.reset();
-    std::cout << "-------------" << std::endl;
-    std::cout << "TOTAL STEPS: " << steps << std::endl;
-    std::cout << "In time: " << time << std::endl;
+    MPI_Finalize();
 
     return 0;
 }
