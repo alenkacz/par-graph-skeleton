@@ -35,7 +35,10 @@ static int32_t MPI_MY_RANK;
 static int32_t MPI_PROCESSES;
 
 enum state { // states of the processes
+	SLEEPING,
 	WORKING,
+	NEED_WORK,
+	FINISHED
 };
 
 #define CHECK_MSG_AMOUNT  100
@@ -53,6 +56,8 @@ static int32_t KGM_UPPER_BOUND = 30;
 static int32_t KGM_LOWER_BOUND = 2;
 static int32_t KGM_START_NODE = 0;
 static uint64_t KGM_REPORT_INTERVAL = 0x10000000;
+static state PROCESS_STATE = SLEEPING;
+static bool running = true;
 //static path graphSource;
 
 struct kgm_vertex_properties {
@@ -288,6 +293,14 @@ void sendWork() {
 	// TODO - asi Lubos? :o) serializovat a poslat
 }
 
+void acceptWork(char* _buffer, int _buffer_size) {
+	// TODO - asi Lubos? :o) deserializovat a prijmout
+}
+
+void requestWork() {
+
+}
+
 void receiveMessage() {
 	int flag = 0;
 	MPI_Status status;
@@ -295,16 +308,22 @@ void receiveMessage() {
 	MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
 	if (flag)
 	{
+	  int buffer_size;
+	  char* buffer = new char[buffer_size];
+	  MPI_Recv(buffer, buffer_size, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 	  switch (status.MPI_TAG)
 	  {
 		 case MSG_WORK_REQUEST :
+			 MPI_Recv(&buffer_size, 1, MPI_INT,  MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			 if(hasExtraWork()) {
 				 sendWork();
 			 } else {
-
+				 // not enough work to send
+				 MPI_Send (buffer, 0, MPI_INT, status.MPI_SOURCE, MSG_WORK_NOWORK, MPI_COMM_WORLD);
 			 }
 			 break;
 		 case MSG_WORK_SENT :
+			  acceptWork(buffer, buffer_size);
 			  break;
 		 case MSG_WORK_NOWORK :
 			  break;
@@ -322,8 +341,66 @@ void receiveMessage() {
 	}
 }
 
-void requestWork() {
+void work() {
+	while(running) {
+		switch(PROCESS_STATE) {
+			case WORKING:
+				break;
+			case NEED_WORK:
+				break;
+			case FINISHED:
+				break;
+			default:
+				throw "Unknown state detected";
+		}
+	}
+}
 
+void printResult(double time, uint64_t steps) {
+	std::cout << "-------------" << std::endl;
+	std::cout << "TOTAL STEPS: " << steps << std::endl;
+	std::cout << "In time: " << time << std::endl;
+}
+
+void iterateStack() {
+	dfs_state firstState;
+	g[KGM_START_NODE].state = true;
+	if (!create_dfs_state(firstState,g))
+	{
+		std::cerr << "Failed to initialize first state" << std::endl;
+		exit(-4);
+	}
+
+	dfs_stack stack;
+	stack.push_back(firstState);
+	degree_stack dstack; // max degree
+	dstack.push_back(0);
+
+	uint16_t minSPdegree = KGM_UPPER_BOUND;
+	uint64_t steps = 0;
+	uint64_t psteps = KGM_REPORT_INTERVAL;
+	boost::scoped_ptr<boost::timer> timer (new boost::timer);
+
+	while (!stack.empty())
+	{
+		if ((psteps % CHECK_MSG_AMOUNT)==0)
+		{
+			receiveMessage();
+		}
+
+		dfs_step(stack, dstack, g, minSPdegree);
+		if (steps >= psteps)
+		{
+			std::cout << "Stack at " << timer->elapsed() << ":" << std::endl
+					<< make_pair(stack.front(),g) << std::endl;
+			psteps += KGM_REPORT_INTERVAL;
+		}
+		++steps;
+	}
+	double time = timer->elapsed();
+	timer.reset();
+
+	printResult(time, steps);
 }
 
 int main(int argc, char ** argv) {
@@ -346,45 +423,7 @@ int main(int argc, char ** argv) {
 	readInputFromFile(filename);
 
     if(MPI_MY_RANK == 0) {
-		dfs_state firstState;
-		g[KGM_START_NODE].state = true;
-		if (!create_dfs_state(firstState,g))
-		{
-			std::cerr << "Failed to initialize first state" << std::endl;
-			return -4;
-		}
-
-		dfs_stack stack;
-		stack.push_back(firstState);
-		degree_stack dstack; // max degree
-		dstack.push_back(0);
-
-		uint16_t minSPdegree = KGM_UPPER_BOUND;
-		uint64_t steps = 0;
-		uint64_t psteps = KGM_REPORT_INTERVAL;
-		boost::scoped_ptr<boost::timer> timer (new boost::timer);
-
-		while (!stack.empty())
-		{
-			if ((psteps % CHECK_MSG_AMOUNT)==0)
-			{
-				receiveMessage();
-			}
-
-			dfs_step(stack, dstack, g, minSPdegree);
-			if (steps >= psteps)
-			{
-				std::cout << "Stack at " << timer->elapsed() << ":" << std::endl
-						<< make_pair(stack.front(),g) << std::endl;
-				psteps += KGM_REPORT_INTERVAL;
-			}
-			++steps;
-		}
-		double time = timer->elapsed();
-		timer.reset();
-		std::cout << "-------------" << std::endl;
-		std::cout << "TOTAL STEPS: " << steps << std::endl;
-		std::cout << "In time: " << time << std::endl;
+		iterateStack();
     }
 
     MPI_Finalize();
