@@ -31,10 +31,11 @@ using namespace std;
 //using namespace boost::filesystem;
 using namespace boost;
 
-static int32_t MPI_MY_RANK;
-static int32_t MPI_PROCESSES;
+static int32_t MPI_MY_RANK; // my process number
+static int32_t MPI_PROCESSES; // number of processes
+static int32_t MPI_REQUEST_PROCESS; // process from which we will be requesting work
 
-enum state { // states of the processes
+enum state { // states of the process
 	SLEEPING,
 	WORKING,
 	NEED_WORK,
@@ -245,17 +246,11 @@ void dfs_step(
         stack.pop_back();
 }
 
-void sendInputToOtherProcesses(std::string contents) {
-
-}
-
 void readInputFromFile(std::string filename) {
 	std::ifstream in(filename.c_str());
 	std::stringstream buffer;
 	buffer << in.rdbuf();
 	std::string contents(buffer.str());
-
-	sendInputToOtherProcesses(contents);
 
 	std::vector<std::string> lines;
 	boost::split(lines, contents, boost::is_any_of("\n"));
@@ -298,7 +293,15 @@ void acceptWork(char* _buffer, int _buffer_size) {
 }
 
 void requestWork() {
+	int message = 1;
+	std::cout << MPI_MY_RANK << " is requesting work from " << MPI_REQUEST_PROCESS;
 
+	MPI_Send(&message, 1, MPI_INT, MPI_REQUEST_PROCESS, MSG_WORK_REQUEST, MPI_COMM_WORLD);
+
+	++MPI_REQUEST_PROCESS % MPI_PROCESSES;
+	if(MPI_REQUEST_PROCESS == MPI_MY_RANK) {
+		MPI_REQUEST_PROCESS++;
+	}
 }
 
 void receiveMessage() {
@@ -318,7 +321,7 @@ void receiveMessage() {
 			 if(hasExtraWork()) {
 				 sendWork();
 			 } else {
-				 // not enough work to send
+				 // not enough work to send, sending refusal
 				 MPI_Send (buffer, 0, MPI_INT, status.MPI_SOURCE, MSG_WORK_NOWORK, MPI_COMM_WORLD);
 			 }
 			 break;
