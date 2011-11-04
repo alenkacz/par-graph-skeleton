@@ -51,6 +51,8 @@ enum state { // states of the process
 #define MSG_FINISH       1004
 #define MSG_NEW_SOLUTION	1005
 
+#define MSG_LENGTH 2048 // maximum length of message
+
 
 static int32_t KGM_GRAPH_SIZE;
 static int32_t KGM_UPPER_BOUND = 30;
@@ -188,6 +190,12 @@ ostream& operator<< (ostream& out, const dfs_stack& stack)
     return out;
 }
 
+void broadcastNewSolution(uint16_t& degreeLimit) {
+	for( int i = 0; i < MPI_PROCESSES; i++ ) {
+		MPI_Send (&degreeLimit, 1, MPI_INT, i, MSG_NEW_SOLUTION, MPI_COMM_WORLD);
+	}
+}
+
 void dfs_step(
         dfs_stack& stack,
         degree_stack& dstack,
@@ -232,6 +240,9 @@ void dfs_step(
             // TODO possible spanning tree improvement
             std::cout << stack << std::endl;
         }
+
+        broadcastNewSolution(degreeLimit);
+
         return;
     }
 
@@ -288,7 +299,7 @@ void sendWork() {
 	// TODO - asi Lubos? :o) serializovat a poslat
 }
 
-void acceptWork(char* _buffer, int _buffer_size) {
+void acceptWork(char* _buffer) {
 	// TODO - asi Lubos? :o) deserializovat a prijmout
 }
 
@@ -311,13 +322,12 @@ void receiveMessage() {
 	MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
 	if (flag)
 	{
-	  int buffer_size;
-	  char* buffer = new char[buffer_size];
-	  MPI_Recv(buffer, buffer_size, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+	  char* buffer;
 	  switch (status.MPI_TAG)
 	  {
 		 case MSG_WORK_REQUEST :
-			 MPI_Recv(&buffer_size, 1, MPI_INT,  MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 buffer = new char[1];
+			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			 if(hasExtraWork()) {
 				 sendWork();
 			 } else {
@@ -326,36 +336,30 @@ void receiveMessage() {
 			 }
 			 break;
 		 case MSG_WORK_SENT :
-			  acceptWork(buffer, buffer_size);
-			  break;
+			 buffer = new char[MSG_LENGTH];
+			 acceptWork(buffer);
+			 PROCESS_STATE = WORKING;
+			 break;
 		 case MSG_WORK_NOWORK :
-			  break;
+			 PROCESS_STATE = NEED_WORK;
+			 break;
 		 case MSG_TOKEN :
-			  break;
+			 // TODO - still not sure how to use it - but hopefully will figure it out :)
+			 break;
 		 case MSG_NEW_SOLUTION :
-			  break;
+			 uint16_t degreeLimit;
+			 MPI_Recv(&degreeLimit, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 // TODO process new solution - not sure what to do :o)
+			 // is it OK to just update the minDegree on the current process?
+			 break;
 		 case MSG_FINISH :
+			  // TODO print solution
 		      MPI_Finalize();
 		      exit (0);
 		      break;
 		 default : // error
 			 break;
 	  }
-	}
-}
-
-void work() {
-	while(running) {
-		switch(PROCESS_STATE) {
-			case WORKING:
-				break;
-			case NEED_WORK:
-				break;
-			case FINISHED:
-				break;
-			default:
-				throw "Unknown state detected";
-		}
 	}
 }
 
@@ -404,6 +408,24 @@ void iterateStack() {
 	timer.reset();
 
 	printResult(time, steps);
+}
+
+void work() {
+	while(running) {
+		switch(PROCESS_STATE) {
+			case WORKING:
+				iterateStack();
+				break;
+			case NEED_WORK:
+				requestWork();
+				break;
+			case FINISHED:
+				// TODO
+				break;
+			default:
+				throw "Unknown state detected";
+		}
+	}
 }
 
 int main(int argc, char ** argv) {
