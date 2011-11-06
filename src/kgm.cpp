@@ -298,7 +298,7 @@ bool hasExtraWork() {
 	return false;
 }
 
-void sendWork() {
+void sendWork(int processNumber) {
 	// TODO - asi Lubos? :o) serializovat a poslat
 }
 
@@ -319,7 +319,11 @@ void requestWork() {
 }
 
 void divideWork() {
-
+	int processNumber = 1; // starting with the next process
+	while(hasExtraWork() && processNumber < MPI_PROCESSES) {
+		sendWork(processNumber);
+	}
+	PROCESS_STATE = WORKING;
 }
 
 void receiveMessage() {
@@ -336,7 +340,7 @@ void receiveMessage() {
 			 buffer = new char[1];
 			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			 if(hasExtraWork()) {
-				 sendWork();
+				 sendWork(status.MPI_SOURCE);
 			 } else {
 				 // not enough work to send, sending refusal
 				 MPI_Send (buffer, 0, MPI_INT, status.MPI_SOURCE, MSG_WORK_NOWORK, MPI_COMM_WORLD);
@@ -404,6 +408,7 @@ void iterateStack() {
 
 		if(PROCESS_STATE == WARMUP && steps == KGM_GRAPH_SIZE) {
 			// time to divide work to other processes
+			std::cout << "Attemp to divide work" << std::endl;
 			divideWork();
 		}
 
@@ -420,19 +425,21 @@ void iterateStack() {
 	timer.reset();
 
 	printResult(time, steps);
+	PROCESS_STATE = FINISHED;
 }
 
 void work() {
 	while(running) {
 		switch(PROCESS_STATE) {
 			case WORKING:
+			case WARMUP:
 				iterateStack();
 				break;
 			case NEED_WORK:
 				requestWork();
 				break;
 			case FINISHED:
-				// TODO
+				exit(0);
 				break;
 			default:
 				throw "Unknown state detected";
@@ -460,7 +467,10 @@ int main(int argc, char ** argv) {
 	readInputFromFile(filename);
 
     if(MPI_MY_RANK == 0) {
-		iterateStack();
+    	PROCESS_STATE = WARMUP;
+
+    	initStack();
+		work();
     }
 
     MPI_Finalize();
