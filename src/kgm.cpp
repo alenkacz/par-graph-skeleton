@@ -48,9 +48,10 @@ enum state { // states of the process
 #define MSG_WORK_REQUEST 1000
 #define MSG_WORK_SENT    1001
 #define MSG_WORK_NOWORK  1002
-#define MSG_TOKEN        1003
-#define MSG_FINISH       1004
-#define MSG_NEW_SOLUTION	1005
+#define MSG_FINISH       1003
+#define MSG_NEW_SOLUTIO  1004
+#define MSG_TOKEN_WHITE  1005
+#define MSG_TOKEN_BLACK  1006
 
 #define MSG_LENGTH 2048 // maximum length of message
 
@@ -195,7 +196,9 @@ ostream& operator<< (ostream& out, const dfs_stack& stack)
 
 void broadcastNewSolution(uint16_t& degreeLimit) {
 	for( int i = 0; i < MPI_PROCESSES; i++ ) {
-		MPI_Send (&degreeLimit, 1, MPI_INT, i, MSG_NEW_SOLUTION, MPI_COMM_WORLD);
+		if(i != MPI_MY_RANK) {
+			MPI_Send (&degreeLimit, 1, MPI_INT, i, MSG_NEW_SOLUTION, MPI_COMM_WORLD);
+		}
 	}
 }
 
@@ -354,8 +357,11 @@ void receiveMessage() {
 		 case MSG_WORK_NOWORK :
 			 PROCESS_STATE = NEED_WORK;
 			 break;
-		 case MSG_TOKEN :
+		 case MSG_TOKEN_WHITE :
 			 // TODO - still not sure how to use it - but hopefully will figure it out :)
+			 break;
+		 case MSG_TOKEN_BLACK :
+			 // TODO
 			 break;
 		 case MSG_NEW_SOLUTION :
 			 uint16_t degreeLimit;
@@ -401,7 +407,7 @@ void iterateStack() {
 
 	while (!dfsStack.empty())
 	{
-		if ((psteps % CHECK_MSG_AMOUNT)==0 && PROCESS_STATE == WORKING)
+		if ((steps % 1)==0)
 		{
 			receiveMessage();
 		}
