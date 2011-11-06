@@ -312,6 +312,13 @@ void acceptWork(char* _buffer) {
 }
 
 void requestWork() {
+	if(MPI_PROCESSES == 1) {
+		running = false;
+		PROCESS_STATE = FINISHED;
+
+		return;
+	}
+
 	int message = 1;
 	std::cout << MPI_MY_RANK << " is requesting work from " << MPI_REQUEST_PROCESS << std::endl;
 
