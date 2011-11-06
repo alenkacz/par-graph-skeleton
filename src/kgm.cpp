@@ -34,12 +34,14 @@ using namespace boost;
 static int32_t MPI_MY_RANK; // my process number
 static int32_t MPI_PROCESSES; // number of processes
 static int32_t MPI_REQUEST_PROCESS; // process from which we will be requesting work
+static int32_t MPI_WORK_REQUEST_FAILS_NUMBER = 0;  // number of times that the work request failed
 
 enum state { // states of the process
 	SLEEPING,
 	WARMUP, // only form process 0
 	WORKING,
 	NEED_WORK,
+	TERMINATING,
 	FINISHED
 };
 
@@ -49,7 +51,7 @@ enum state { // states of the process
 #define MSG_WORK_SENT    1001
 #define MSG_WORK_NOWORK  1002
 #define MSG_FINISH       1003
-#define MSG_NEW_SOLUTIO  1004
+#define MSG_NEW_SOLUTION 1004
 #define MSG_TOKEN_WHITE  1005
 #define MSG_TOKEN_BLACK  1006
 
@@ -329,6 +331,18 @@ void divideWork() {
 	PROCESS_STATE = WORKING;
 }
 
+void sendWhiteToken() {
+	// sends white token to the next
+	int message = 1;
+	MPI_Send (&message, 1, MPI_INT, (MPI_MY_RANK + 1) % MPI_PROCESSES, MSG_TOKEN_WHITE, MPI_COMM_WORLD);
+}
+
+void sendBlackToken() {
+	// sends white token to the next
+	int message = 1;
+	MPI_Send (&message, 1, MPI_INT, (MPI_MY_RANK + 1) % MPI_PROCESSES, MSG_TOKEN_BLACK, MPI_COMM_WORLD);
+}
+
 void receiveMessage() {
 	int flag = 0;
 	MPI_Status status;
@@ -346,28 +360,51 @@ void receiveMessage() {
 				 sendWork(status.MPI_SOURCE);
 			 } else {
 				 // not enough work to send, sending refusal
-				 MPI_Send (buffer, 0, MPI_INT, status.MPI_SOURCE, MSG_WORK_NOWORK, MPI_COMM_WORLD);
+				 MPI_Send (buffer, 1, MPI_INT, status.MPI_SOURCE, MSG_WORK_NOWORK, MPI_COMM_WORLD);
 			 }
 			 break;
 		 case MSG_WORK_SENT :
 			 buffer = new char[MSG_LENGTH];
 			 acceptWork(buffer);
 			 PROCESS_STATE = WORKING;
+			 MPI_WORK_REQUEST_FAILS_NUMBER = 0;
 			 break;
 		 case MSG_WORK_NOWORK :
-			 PROCESS_STATE = NEED_WORK;
+			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 ++MPI_WORK_REQUEST_FAILS_NUMBER;
+			 if(MPI_MY_RANK == 0 && MPI_WORK_REQUEST_FAILS_NUMBER/2 >= MPI_PROCESSES) {
+				 PROCESS_STATE = TERMINATING;
+				 sendWhiteToken();
+			 } else {
+				 PROCESS_STATE = NEED_WORK;
+			 }
 			 break;
 		 case MSG_TOKEN_WHITE :
-			 // TODO - still not sure how to use it - but hopefully will figure it out :)
+			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+
+			 if(MPI_MY_RANK == 0 && dfsStack.empty()) {
+				 // TODO terminate
+			 } else if(dfsStack.empty()) {
+				 PROCESS_STATE = TERMINATING;
+				 sendWhiteToken(); // pass it to the next process
+			 } else {
+				 sendBlackToken(); // received white token but still has work
+			 }
 			 break;
 		 case MSG_TOKEN_BLACK :
-			 // TODO
+			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 if(MPI_MY_RANK == 0) {
+				 PROCESS_STATE = NEED_WORK;
+			 } else {
+				 sendBlackToken();
+			 }
 			 break;
 		 case MSG_NEW_SOLUTION :
 			 uint16_t degreeLimit;
 			 MPI_Recv(&degreeLimit, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			 // TODO process new solution - not sure what to do :o)
 			 // is it OK to just update the minDegree on the current process?
+			 // shouldn't we send the best skeleton as well, not just the rank?
 			 break;
 		 case MSG_FINISH :
 			  // TODO print solution
