@@ -37,7 +37,7 @@ static int32_t MPI_REQUEST_PROCESS; // process from which we will be requesting 
 static int32_t MPI_WORK_REQUEST_FAILS_NUMBER = 0;  // number of times that the work request failed
 
 enum state { // states of the process
-	SLEEPING,
+	LISTEN,
 	WARMUP, // only form process 0
 	WORKING,
 	NEED_WORK,
@@ -63,7 +63,7 @@ static int32_t KGM_UPPER_BOUND = 30;
 static int32_t KGM_LOWER_BOUND = 2;
 static int32_t KGM_START_NODE = 0;
 static uint64_t KGM_REPORT_INTERVAL = 0x10000000;
-static state PROCESS_STATE = SLEEPING;
+static state PROCESS_STATE = LISTEN;
 static bool running = true;
 //static path graphSource;
 
@@ -247,9 +247,9 @@ void dfs_step(
             degreeLimit = dstack.back();
             // TODO possible spanning tree improvement
             std::cout << stack << std::endl;
-        }
 
-        broadcastNewSolution(degreeLimit);
+            broadcastNewSolution(degreeLimit);
+        }
 
         return;
     }
@@ -313,13 +313,13 @@ void acceptWork(char* _buffer) {
 
 void requestWork() {
 	int message = 1;
-	std::cout << MPI_MY_RANK << " is requesting work from " << MPI_REQUEST_PROCESS;
+	std::cout << MPI_MY_RANK << " is requesting work from " << MPI_REQUEST_PROCESS << std::endl;
 
 	MPI_Send(&message, 1, MPI_INT, MPI_REQUEST_PROCESS, MSG_WORK_REQUEST, MPI_COMM_WORLD);
 
-	++MPI_REQUEST_PROCESS % MPI_PROCESSES;
+	MPI_REQUEST_PROCESS = (MPI_REQUEST_PROCESS + 1) % MPI_PROCESSES;
 	if(MPI_REQUEST_PROCESS == MPI_MY_RANK) {
-		MPI_REQUEST_PROCESS++;
+		MPI_REQUEST_PROCESS = (MPI_REQUEST_PROCESS+1)  % MPI_PROCESSES;
 	}
 }
 
@@ -346,8 +346,9 @@ void sendBlackToken() {
 void sendFinish() {
 	int message = 1;
 	for(int i = 1; i < MPI_PROCESSES; i++) {
-		MPI_Send (&message, 1, MPI_INT, (MPI_MY_RANK + 1) % MPI_PROCESSES, MSG_TOKEN_BLACK, MPI_COMM_WORLD);
+		MPI_Send (&message, 1, MPI_INT, i, MSG_FINISH, MPI_COMM_WORLD);
 	}
+	running = false;
 }
 
 void receiveMessage() {
@@ -357,29 +358,33 @@ void receiveMessage() {
 	MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
 	if (flag)
 	{
-	  char* buffer;
+	  char* buffer = new char[MSG_LENGTH];
 	  switch (status.MPI_TAG)
 	  {
 		 case MSG_WORK_REQUEST :
 			 buffer = new char[1];
-			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 std::cout << MPI_MY_RANK << " received MSG_WORK_REQUEST from " << status.MPI_SOURCE << std::endl;
+			 MPI_Recv(buffer, 1, MPI_INT, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			 if(hasExtraWork()) {
 				 sendWork(status.MPI_SOURCE);
 			 } else {
 				 // not enough work to send, sending refusal
+				 std::cout << MPI_MY_RANK << " sends NOWORK to " << status.MPI_SOURCE << std::endl;
 				 MPI_Send (buffer, 1, MPI_INT, status.MPI_SOURCE, MSG_WORK_NOWORK, MPI_COMM_WORLD);
 			 }
 			 break;
 		 case MSG_WORK_SENT :
-			 buffer = new char[MSG_LENGTH];
 			 acceptWork(buffer);
 			 PROCESS_STATE = WORKING;
 			 MPI_WORK_REQUEST_FAILS_NUMBER = 0;
 			 break;
 		 case MSG_WORK_NOWORK :
-			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 buffer = new char[1];
+			 std::cout << MPI_MY_RANK << " received MSG_NOWORK from " << status.MPI_SOURCE << " it failed " << MPI_WORK_REQUEST_FAILS_NUMBER << " times " << std::endl;
+			 MPI_Recv(buffer, 1, MPI_INT, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			 ++MPI_WORK_REQUEST_FAILS_NUMBER;
-			 if(MPI_MY_RANK == 0 && MPI_WORK_REQUEST_FAILS_NUMBER/2 >= MPI_PROCESSES) {
+			 if(MPI_MY_RANK == 0 && (MPI_WORK_REQUEST_FAILS_NUMBER/2) >= MPI_PROCESSES) {
+				 std::cout << MPI_MY_RANK << " is terminating" << std::endl;
 				 PROCESS_STATE = TERMINATING;
 				 sendWhiteToken();
 			 } else {
@@ -387,9 +392,11 @@ void receiveMessage() {
 			 }
 			 break;
 		 case MSG_TOKEN_WHITE :
-			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 std::cout << MPI_MY_RANK << " received MSG_TOKEN_WHITE from " << status.MPI_SOURCE << std::endl;
+			 MPI_Recv(buffer, MSG_LENGTH, MPI_INT, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
 			 if(MPI_MY_RANK == 0 && dfsStack.empty()) {
+				 std::cout << MPI_MY_RANK << " is sending MSG_TOKEN_FINISH to " << status.MPI_SOURCE << std::endl;
 				 sendFinish();
 			 } else if(dfsStack.empty()) {
 				 PROCESS_STATE = TERMINATING;
@@ -399,7 +406,8 @@ void receiveMessage() {
 			 }
 			 break;
 		 case MSG_TOKEN_BLACK :
-			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 std::cout << MPI_MY_RANK << " received MSG_TOKEN_BLACK from " << status.MPI_SOURCE << std::endl;
+			 MPI_Recv(buffer, MSG_LENGTH, MPI_INT, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			 if(MPI_MY_RANK == 0) {
 				 PROCESS_STATE = NEED_WORK;
 			 } else {
@@ -407,14 +415,15 @@ void receiveMessage() {
 			 }
 			 break;
 		 case MSG_NEW_SOLUTION :
-			 uint16_t degreeLimit;
-			 MPI_Recv(&degreeLimit, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			 std::cout << MPI_MY_RANK << " received MSG_NEW_SOLUTION from " << status.MPI_SOURCE << std::endl;
+			 MPI_Recv(buffer, MSG_LENGTH, MPI_INT, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			 // TODO process new solution - not sure what to do :o)
 			 // is it OK to just update the minDegree on the current process?
 			 // shouldn't we send the best skeleton as well, not just the rank?
 			 break;
 		 case MSG_FINISH :
-			  MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			  std::cout << MPI_MY_RANK << " received MSG_FINISH from " << status.MPI_SOURCE << std::endl;
+			  MPI_Recv(buffer, MSG_LENGTH, MPI_INT, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 			  running = false;
 		      break;
 		 default : // error
@@ -473,8 +482,7 @@ void iterateStack() {
 	double time = timer->elapsed();
 	timer.reset();
 
-	printResult(time, steps);
-	PROCESS_STATE = FINISHED;
+	PROCESS_STATE = NEED_WORK;
 }
 
 void work() {
@@ -484,8 +492,13 @@ void work() {
 			case WARMUP:
 				iterateStack();
 				break;
+			case LISTEN:
+			case TERMINATING:
+				receiveMessage();
+				break;
 			case NEED_WORK:
 				requestWork();
+				PROCESS_STATE = LISTEN;
 				break;
 			case FINISHED:
 				exit(0);
@@ -497,6 +510,7 @@ void work() {
 
 	if(MPI_MY_RANK == 0) {
 		// TODO print result
+		return;
 	}
 }
 
@@ -512,6 +526,7 @@ int main(int argc, char ** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &MPI_MY_RANK); // my rank
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_PROCESSES); // number of processes
     MPI_Barrier(MPI_COMM_WORLD); // loading all processes
+    MPI_REQUEST_PROCESS = (MPI_MY_RANK + 1) % MPI_PROCESSES;
 
     std::string filename (argv[1]);
 	if (filename.empty())
@@ -523,8 +538,8 @@ int main(int argc, char ** argv) {
     	PROCESS_STATE = WARMUP;
 
     	initStack();
-		work();
     }
+    work();
 
     MPI_Finalize();
 
