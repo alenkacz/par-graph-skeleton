@@ -37,6 +37,7 @@ static int32_t MPI_REQUEST_PROCESS; // process from which we will be requesting 
 
 enum state { // states of the process
 	SLEEPING,
+	WARMUP, // only form process 0
 	WORKING,
 	NEED_WORK,
 	FINISHED
@@ -100,6 +101,8 @@ typedef std::stack<kgm_edge_descriptor> kgm_stack;
 typedef std::vector<uint16_t> degree_stack;
 
 ugraph g;
+dfs_stack dfsStack;
+degree_stack degreeStack;
 
 ostream& operator<< (ostream& out, const kgm_adjacency_iterator& ai);
 ostream& operator<< (ostream& out, const kgm_vertex_iterator& ai);
@@ -315,6 +318,10 @@ void requestWork() {
 	}
 }
 
+void divideWork() {
+
+}
+
 void receiveMessage() {
 	int flag = 0;
 	MPI_Status status;
@@ -369,7 +376,7 @@ void printResult(double time, uint64_t steps) {
 	std::cout << "In time: " << time << std::endl;
 }
 
-void iterateStack() {
+void initStack() {
 	dfs_state firstState;
 	g[KGM_START_NODE].state = true;
 	if (!create_dfs_state(firstState,g))
@@ -377,29 +384,34 @@ void iterateStack() {
 		std::cerr << "Failed to initialize first state" << std::endl;
 		exit(-4);
 	}
+	dfsStack.push_back(firstState);
+}
 
-	dfs_stack stack;
-	stack.push_back(firstState);
-	degree_stack dstack; // max degree
-	dstack.push_back(0);
+void iterateStack() {
+	degreeStack.push_back(0);
 
 	uint16_t minSPdegree = KGM_UPPER_BOUND;
 	uint64_t steps = 0;
 	uint64_t psteps = KGM_REPORT_INTERVAL;
 	boost::scoped_ptr<boost::timer> timer (new boost::timer);
 
-	while (!stack.empty())
+	while (!dfsStack.empty())
 	{
-		if ((psteps % CHECK_MSG_AMOUNT)==0)
+		if ((psteps % CHECK_MSG_AMOUNT)==0 && PROCESS_STATE == WORKING)
 		{
 			receiveMessage();
 		}
 
-		dfs_step(stack, dstack, g, minSPdegree);
+		if(PROCESS_STATE == WARMUP && steps == KGM_GRAPH_SIZE) {
+			// time to divide work to other processes
+			divideWork();
+		}
+
+		dfs_step(dfsStack, degreeStack, g, minSPdegree);
 		if (steps >= psteps)
 		{
 			std::cout << "Stack at " << timer->elapsed() << ":" << std::endl
-					<< make_pair(stack.front(),g) << std::endl;
+					<< make_pair(dfsStack.front(),g) << std::endl;
 			psteps += KGM_REPORT_INTERVAL;
 		}
 		++steps;
