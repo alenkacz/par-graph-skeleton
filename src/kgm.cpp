@@ -343,6 +343,13 @@ void sendBlackToken() {
 	MPI_Send (&message, 1, MPI_INT, (MPI_MY_RANK + 1) % MPI_PROCESSES, MSG_TOKEN_BLACK, MPI_COMM_WORLD);
 }
 
+void sendFinish() {
+	int message = 1;
+	for(int i = 1; i < MPI_PROCESSES; i++) {
+		MPI_Send (&message, 1, MPI_INT, (MPI_MY_RANK + 1) % MPI_PROCESSES, MSG_TOKEN_BLACK, MPI_COMM_WORLD);
+	}
+}
+
 void receiveMessage() {
 	int flag = 0;
 	MPI_Status status;
@@ -383,7 +390,7 @@ void receiveMessage() {
 			 MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
 			 if(MPI_MY_RANK == 0 && dfsStack.empty()) {
-				 // TODO terminate
+				 sendFinish();
 			 } else if(dfsStack.empty()) {
 				 PROCESS_STATE = TERMINATING;
 				 sendWhiteToken(); // pass it to the next process
@@ -407,9 +414,8 @@ void receiveMessage() {
 			 // shouldn't we send the best skeleton as well, not just the rank?
 			 break;
 		 case MSG_FINISH :
-			  // TODO print solution
-		      MPI_Finalize();
-		      exit (0);
+			  MPI_Recv(buffer, 1, MPI_CHAR, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			  running = false;
 		      break;
 		 default : // error
 			 break;
@@ -487,6 +493,10 @@ void work() {
 			default:
 				throw "Unknown state detected";
 		}
+	}
+
+	if(MPI_MY_RANK == 0) {
+		// TODO print result
 	}
 }
 
