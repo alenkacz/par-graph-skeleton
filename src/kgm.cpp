@@ -60,9 +60,11 @@ enum state { // states of the process
 
 static int32_t KGM_GRAPH_SIZE;
 static int32_t KGM_UPPER_BOUND = 30;
+static uint64_t KGM_ACTUAL_MIN_BOUND = KGM_UPPER_BOUND; // min degree
 static int32_t KGM_LOWER_BOUND = 2;
 static int32_t KGM_START_NODE = 0;
 static uint64_t KGM_REPORT_INTERVAL = 0x10000000;
+static uint64_t KGM_STEPS = 0;
 static state PROCESS_STATE = LISTEN;
 static bool running = true;
 //static path graphSource;
@@ -460,31 +462,32 @@ void iterateStack() {
 	degreeStack.push_back(0);
 
 	uint16_t minSPdegree = KGM_UPPER_BOUND;
-	uint64_t steps = 0;
 	uint64_t psteps = KGM_REPORT_INTERVAL;
 	boost::scoped_ptr<boost::timer> timer (new boost::timer);
 
 	while (!dfsStack.empty())
 	{
-		if ((steps % 1)==0)
+		if ((KGM_STEPS % CHECK_MSG_AMOUNT)==0)
 		{
 			receiveMessage();
+			return;
 		}
 
-		if(PROCESS_STATE == WARMUP && steps == KGM_GRAPH_SIZE) {
+		if(PROCESS_STATE == WARMUP && KGM_STEPS == KGM_GRAPH_SIZE) {
 			// time to divide work to other processes
 			std::cout << "Attemp to divide work" << std::endl;
 			divideWork();
+			return;
 		}
 
 		dfs_step(dfsStack, degreeStack, g, minSPdegree);
-		if (steps >= psteps)
+		if (KGM_STEPS >= psteps)
 		{
 			std::cout << "Stack at " << timer->elapsed() << ":" << std::endl
 					<< make_pair(dfsStack.front(),g) << std::endl;
 			psteps += KGM_REPORT_INTERVAL;
 		}
-		++steps;
+		++KGM_STEPS;
 	}
 	double time = timer->elapsed();
 	timer.reset();
