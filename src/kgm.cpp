@@ -116,7 +116,13 @@ ostream& operator<< (ostream& out, const dfs_state& state);
 ostream& operator<< (ostream& out, const std::pair<dfs_state,ugraph>& state);
 ostream& operator<< (ostream& out, const dfs_stack& stack);
 
-bool isValid_dfs_state(const dfs_state& dfsState, const ugraph& graph);
+bool isValid_dfs_state(const dfs_state& dfsState, const ugraph& graph)
+{
+    if (graph[*(dfsState.v_it)].state == false ||
+        graph[*(dfsState.a_it)].state == true)
+        return false;
+    return true;
+}
 
 bool iterate_dfs_state(dfs_state& dfsState, const ugraph& graph)
 {
@@ -211,7 +217,7 @@ void broadcastNewSolution(uint16_t& degreeLimit) {
 
 void dfs_step(
         dfs_stack& stack,
-        degree_stack& dstack,
+        degree_stack& degStack,
         ugraph& graph,
         uint16_t& degreeLimit) // so far the lowest skeleton degree
 {
@@ -229,11 +235,11 @@ void dfs_step(
         graph[*(stack.back().a_it)].degree = 1;
         graph[*(stack.back().a_it)].state = true;
 
-        dstack.push_back(std::max(graph[*(stack.back().v_it)].degree, dstack.back()));
+        degStack.push_back(std::max(graph[*(stack.back().v_it)].degree, degStack.back()));
 
-        if (dstack.back() >= degreeLimit)
+        if (degStack.back() >= degreeLimit)
         {   // not going to be a better solution
-            dstack.pop_back();
+            degStack.pop_back();
             graph[*(stack.back().v_it)].degree -= 1;
             graph[*(stack.back().a_it)].degree = 0;
             graph[*(stack.back().a_it)].state = false;
@@ -248,8 +254,8 @@ void dfs_step(
             stack.push_back(newState);
         else
         {
-            std::cout << "New spanning tree - degree: "<< dstack.back() << std::endl;
-            degreeLimit = dstack.back();
+            std::cout << "New spanning tree - degree: "<< degStack.back() << std::endl;
+            degreeLimit = degStack.back();
             // TODO possible spanning tree improvement
             std::cout << stack << std::endl;
 
@@ -264,7 +270,7 @@ void dfs_step(
     graph[*(prev.a_it)].degree = 0;
     graph[*(prev.a_it)].state = false;
 
-    dstack.pop_back();
+    degStack.pop_back();
 
     if (!iterate_dfs_state(stack.back(), graph)) // not able to iterate further, branch is removed from the stack
         stack.pop_back();
@@ -334,28 +340,84 @@ void sendWork(int processNumber) {
     (*it).v_it_end = newVIt;
 
     kgm_vertex_iterator gi, gi_end;
-    char* outputBuffer = new char [sizeof(uint32_t)*(KGM_GRAPH_SIZE + 4)];
-    uint32_t* outputBuffer32 = (uint32_t*) outputBuffer;
+    char* outputBuffer = new char [sizeof(uint16_t)*(KGM_GRAPH_SIZE*2 + 5)];
+    uint16_t* outputBuffer16 = (uint16_t*) outputBuffer;
     int i = 1, cnt = 0;
-    outputBuffer32[i++] = (uint32_t)(*newVIt); // starting state - v_it
-    outputBuffer32[i++] = (uint32_t)(*newVIt_end); // starting state - v_it_end
+    outputBuffer16[i++] = (uint16_t)(degreeStack.at(it-dfsStack.begin())); // spanning tree degree
+    outputBuffer16[i++] = (uint16_t)(*newVIt); // starting state - v_it
+    outputBuffer16[i++] = (uint16_t)(*newVIt_end); // starting state - v_it_end
     for (tie (gi, gi_end) = vertices(g); gi != gi_end; ++gi)
     {
         if (g[(*gi)].state == true)
         {
-            outputBuffer32[i++] = (uint32_t)(*gi);
+            outputBuffer16[i++] = (uint16_t)(*gi);
             ++cnt;
         }
     }
-    outputBuffer32[0] = (uint32_t)(cnt); // number of visited states - depth
-    outputBuffer32[i++] = (uint32_t) 0; // terminating 0000 bytes
+    outputBuffer16[0] = (uint16_t)(cnt); // number of visited states - depth
+    outputBuffer16[i++] = (uint16_t) 0; // terminating 00 bytes
 
-    MPI_Send (outputBuffer, i*sizeof(uint32_t)+1, MPI_CHAR, processNumber, MSG_WORK_SENT, MPI_COMM_WORLD);
+    MPI_Send (outputBuffer, i*sizeof(uint16_t), MPI_CHAR, processNumber, MSG_WORK_SENT, MPI_COMM_WORLD);
     delete[] outputBuffer;
 }
 
-void acceptWork(char* _buffer) {
-	// TODO - asi Lubos? :o) deserializovat a prijmout
+void acceptWork(MPI_Status& status) {
+    int maxInputBufferSize = sizeof(uint16_t)*(KGM_GRAPH_SIZE*2 + 5), receivedNum;
+    char* inputBuffer = new char [maxInputBufferSize];
+    uint16_t* inputBuffer16 = (uint16_t*) inputBuffer;
+
+    MPI_Recv(inputBuffer, maxInputBufferSize, MPI_CHAR, status.MPI_SOURCE, MSG_WORK_SENT, MPI_COMM_WORLD, &status);
+    MPI_Get_count(&status, MPI_CHAR, &receivedNum);
+
+    int total16 = receivedNum / sizeof(uint16_t); // uint32_t index
+    std::cout << MPI_MY_RANK << ": received work - total of uint32_t: " << total16 << std::endl;
+    if (inputBuffer[total16-1] != 0)
+    {
+        std::cout << MPI_MY_RANK <<
+                ": ERROR - acceptWork char* bad format - LAST UINT32_T != 0" << std::endl;
+        throw("ERROR - acceptWork char* bad format - LAST UINT32_T != 0");
+    }
+
+    int numberOfVisitedNodes = inputBuffer16[0];
+
+    // Clear degree stack, put first state's degree into the stack
+    degreeStack.clear();
+    degreeStack.push_back(inputBuffer16[1]);
+
+    // Clear graph state
+    kgm_vertex_iterator vi, vi_end;
+    for (tie(vi, vi_end) = vertices(g); vi != vi_end; ++vi)
+    {
+        g[(*vi)].state = false;
+        g[(*vi)].degree = 0;
+    }
+
+    // Initialize graph state from message
+    uint16_t visitedNodesCnt = 0;
+    for (int j = 4, j_end = total16-1; j != j_end; j+=2)
+    {
+        g[inputBuffer16[j]].state = true;
+        g[inputBuffer16[j]].degree = inputBuffer16[j+1];
+        ++visitedNodesCnt;
+    }
+    if (numberOfVisitedNodes != visitedNodesCnt)
+    {
+        std::cout << MPI_MY_RANK <<
+                ": ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes" << std::endl;
+        throw("ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes");
+    }
+
+    // Clear dfs stack and initialize first state
+    dfsStack.clear();
+    dfs_state firstState;
+    tie(firstState.v_it, firstState.v_it_end) = vertices(g);
+    firstState.v_it += inputBuffer16[2];
+    firstState.v_it_end += inputBuffer16[3];
+    tie(firstState.a_it, firstState.a_it_end) = adjacent_vertices(*(firstState.v_it),g);
+    if (!isValid_dfs_state(firstState, g))
+        iterate_dfs_state(firstState, g);
+    dfsStack.push_back(firstState);
+
 }
 
 void requestWork() {
@@ -428,7 +490,7 @@ void receiveMessage() {
 			 }
 			 break;
 		 case MSG_WORK_SENT :
-			 acceptWork(buffer);
+			 acceptWork(status);
 			 PROCESS_STATE = WORKING;
 			 MPI_WORK_REQUEST_FAILS_NUMBER = 0;
 			 break;
