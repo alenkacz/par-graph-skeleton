@@ -28,15 +28,14 @@
 #include "mpi.h"
 
 using namespace std;
-//using namespace boost::filesystem;
 using namespace boost;
 
-static int32_t MPI_MY_RANK; // my process number
-static int32_t MPI_PROCESSES; // number of processes
-static int32_t MPI_REQUEST_PROCESS; // process from which we will be requesting work
-static int32_t MPI_WORK_REQUEST_FAILS_NUMBER = 0;  // number of times that the work request failed
+int32_t MPI_MY_RANK; // my process number
+int32_t MPI_PROCESSES; // number of processes
+int32_t MPI_REQUEST_PROCESS; // process from which we will be requesting work
+int32_t MPI_WORK_REQUEST_FAILS_NUMBER = 0;  // number of times that the work request failed
 
-enum state { // states of the process
+enum kgm_process_state { // states of the process
 	LISTEN,
 	WARMUP, // only form process 0
 	WORKING,
@@ -58,16 +57,18 @@ enum state { // states of the process
 #define MSG_LENGTH 2048 // maximum length of message
 
 
-static int32_t KGM_GRAPH_SIZE;
-static int32_t KGM_UPPER_BOUND = 30;
-static uint64_t KGM_ACTUAL_MIN_BOUND = KGM_UPPER_BOUND; // min degree
-static int32_t KGM_LOWER_BOUND = 2;
-static int32_t KGM_START_NODE = 0;
-static uint64_t KGM_REPORT_INTERVAL = 0x10000000;
-static uint64_t KGM_STEPS = 0;
-static state PROCESS_STATE = LISTEN;
-static bool running = true;
-//static path graphSource;
+uint32_t KGM_GRAPH_SIZE;
+uint32_t KGM_UPPER_BOUND = 30;
+uint32_t KGM_ACTUAL_MIN_BOUND = KGM_UPPER_BOUND; // min degree
+uint32_t KGM_LOWER_BOUND = 2;
+uint32_t KGM_START_NODE = 0;
+uint64_t KGM_REPORT_INTERVAL = 0x10000000;
+uint64_t KGM_STEPS = 0;
+kgm_process_state PROCESS_STATE = LISTEN;
+bool running = true;
+
+
+
 
 struct kgm_vertex_properties {
     kgm_vertex_properties() :
@@ -114,6 +115,8 @@ ostream& operator<< (ostream& out, const kgm_vertex_iterator& ai);
 ostream& operator<< (ostream& out, const dfs_state& state);
 ostream& operator<< (ostream& out, const std::pair<dfs_state,ugraph>& state);
 ostream& operator<< (ostream& out, const dfs_stack& stack);
+
+bool isValid_dfs_state(const dfs_state& dfsState, const ugraph& graph);
 
 bool iterate_dfs_state(dfs_state& dfsState, const ugraph& graph)
 {
@@ -301,12 +304,54 @@ void readInputFromFile(std::string filename) {
 }
 
 bool hasExtraWork() {
-	// TODO - asi Lubos? :o) detekce toho, jestli mame co delit
+    for (dfs_stack::iterator it = dfsStack.begin(); it != dfsStack.end(); ++it)
+    {
+        if ((*it).v_it != (*it).v_it_end)
+            return true;
+    }
 	return false;
 }
 
 void sendWork(int processNumber) {
-	// TODO - asi Lubos? :o) serializovat a poslat
+    int difference, diffRatio;
+    kgm_vertex_iterator newVIt, newVIt_end;
+    dfs_stack::iterator it;
+    bool ok = false;
+    for (it = dfsStack.begin(); it != dfsStack.end(); ++it)
+    {
+        difference = (*it).v_it_end-(*it).v_it;
+        if (difference > 1)
+        {
+            diffRatio = ((*it).v_it_end-(*it).v_it+1)/2;
+            newVIt = (*it).v_it+diffRatio;
+            newVIt_end = (*it).v_it_end;
+            ok = true;
+            break;
+        }
+    }
+    if (!ok)
+        return;
+    (*it).v_it_end = newVIt;
+
+    kgm_vertex_iterator gi, gi_end;
+    char* outputBuffer = new char [sizeof(uint32_t)*(KGM_GRAPH_SIZE + 4)];
+    uint32_t* outputBuffer32 = (uint32_t*) outputBuffer;
+    int i = 1, cnt = 0;
+    outputBuffer32[i++] = (uint32_t)(*newVIt); // starting state - v_it
+    outputBuffer32[i++] = (uint32_t)(*newVIt_end); // starting state - v_it_end
+    for (tie (gi, gi_end) = vertices(g); gi != gi_end; ++gi)
+    {
+        if (g[(*gi)].state == true)
+        {
+            outputBuffer32[i++] = (uint32_t)(*gi);
+            ++cnt;
+        }
+    }
+    outputBuffer32[0] = (uint32_t)(cnt); // number of visited states - depth
+    outputBuffer32[i++] = (uint32_t) 0; // terminating 0000 bytes
+
+    MPI_Send (outputBuffer, i*sizeof(uint32_t)+1, MPI_CHAR, processNumber, MSG_WORK_SENT, MPI_COMM_WORLD);
+    delete[] outputBuffer;
 }
 
 void acceptWork(char* _buffer) {
@@ -452,7 +497,7 @@ void initStack() {
 	g[KGM_START_NODE].state = true;
 	if (!create_dfs_state(firstState,g))
 	{
-		std::cerr << "Failed to initialize first state" << std::endl;
+		std::cerr << "Failed to initialize first kgm_process_state" << std::endl;
 		exit(-4);
 	}
 	dfsStack.push_back(firstState);
@@ -514,7 +559,7 @@ void work() {
 				exit(0);
 				break;
 			default:
-				throw "Unknown state detected";
+				throw "Unknown kgm_process_state detected";
 		}
 	}
 
