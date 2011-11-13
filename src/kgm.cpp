@@ -60,16 +60,16 @@ enum kgm_process_state { // states of the process
 
 
 uint32_t KGM_GRAPH_SIZE;
-uint32_t KGM_UPPER_BOUND = 30;
+uint16_t KGM_UPPER_BOUND = 30;
 uint32_t KGM_ACTUAL_MIN_BOUND = KGM_UPPER_BOUND; // min degree
 uint32_t KGM_LOWER_BOUND = 2;
 uint32_t KGM_START_NODE = 0;
 uint64_t KGM_REPORT_INTERVAL = 0x10000000;
+uint64_t KGM_REPORT_NEXT = KGM_REPORT_INTERVAL;
 uint64_t KGM_STEPS = 0;
+boost::scoped_ptr<boost::timer> KGM_TIMER;
 kgm_process_state PROCESS_STATE = LISTEN;
 bool running = true;
-
-
 
 
 struct kgm_vertex_properties {
@@ -210,9 +210,10 @@ ostream& operator<< (ostream& out, const dfs_stack& stack)
 }
 
 void broadcastNewSolution(uint16_t& degreeLimit) {
+    std::cout << MPI_MY_RANK << ": broadcasting new solution of degree = " << degreeLimit << std::endl;
 	for( int i = 0; i < MPI_PROCESSES; i++ ) {
 		if(i != MPI_MY_RANK) {
-			MPI_Send (&degreeLimit, 1, MPI_INT, i, MSG_NEW_SOLUTION, MPI_COMM_WORLD);
+			MPI_Send ((int*)(&degreeLimit), 1, MPI_INT, i, MSG_NEW_SOLUTION, MPI_COMM_WORLD);
 		}
 	}
 }
@@ -258,7 +259,8 @@ void dfs_step(
         {
             degreeLimit = degStack.back();
             // TODO possible spanning tree improvement
-            std::cout << stack << std::endl;
+            std::cout << MPI_MY_RANK << ": New spanning tree of degree: "<< degreeLimit << std::endl
+                    << stack << std::endl;
 
             broadcastNewSolution(degreeLimit);
         }
@@ -352,8 +354,9 @@ void sendWork(int processNumber) {
     ++it;
     for (git = dfsStack.begin(); git != it; ++git)
     {
-            outputBuffer16[i++] = (uint16_t)(*((*git).v_it));
-            ++cnt;
+        outputBuffer16[i++] = (uint16_t)(*((*git).v_it));
+        outputBuffer16[i++] = (uint16_t)g[(*((*git).v_it))].degree;
+        ++cnt;
     }
     outputBuffer16[0] = (uint16_t)(cnt); // number of visited states - depth
     outputBuffer16[i++] = (uint16_t) 0; // terminating 00 bytes
@@ -381,7 +384,7 @@ void acceptWork(MPI_Status& status) {
     MPI_Recv(inputBuffer, maxInputBufferSize, MPI_CHAR, status.MPI_SOURCE, MSG_WORK_SENT, MPI_COMM_WORLD, &status);
     MPI_Get_count(&status, MPI_CHAR, &receivedNum);
 
-    int total16 = receivedNum / sizeof(uint16_t); // uint32_t index
+    int total16 = receivedNum / sizeof(uint16_t); // uint16_t index
     std::stringstream ss;
     ss << "[ ";
     for (int i = 0; i < total16; ++i)
@@ -393,10 +396,12 @@ void acceptWork(MPI_Status& status) {
             << " from " << status.MPI_SOURCE << std::endl
             << ss.str() << std::endl;
 
-    if (inputBuffer[total16-1] != 0)
+    if (inputBuffer16[total16-1] != 0)
     {
         std::cout << MPI_MY_RANK <<
-                ": ERROR - acceptWork char* bad format - LAST UINT16_T != 0" << std::endl;
+                ": ERROR - acceptWork char* bad format - LAST UINT16_T != 0" << std::endl
+                << "inputBuffer[total16-1] = " << inputBuffer[total16-1] << std::endl
+                << "total16 = " << total16 << std::endl;
         throw("ERROR - acceptWork char* bad format - LAST UINT16_T != 0");
     }
     else {
@@ -419,7 +424,7 @@ void acceptWork(MPI_Status& status) {
     }
 
     // Initialize graph state from message
-    uint16_t visitedNodesCnt = 0;
+    int visitedNodesCnt = 0;
     for (int j = 4, j_end = total16-1; j < j_end; j+=2)
     {
         g[inputBuffer16[j]].state = true;
@@ -429,7 +434,9 @@ void acceptWork(MPI_Status& status) {
     if (numberOfVisitedNodes != visitedNodesCnt)
     {
         std::cout << MPI_MY_RANK <<
-                ": ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes" << std::endl;
+                ": ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes" << std::endl
+                << "numberOfVisitedNodes = inputBuffer16[0] = " << inputBuffer16[0] << std::endl
+                << "visitedNodesCnt = " << visitedNodesCnt << std::endl;
         throw("ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes");
     }
     else
@@ -481,6 +488,17 @@ void divideWork() {
 		++processNumber;
 	}
 	PROCESS_STATE = WORKING;
+}
+
+void updateDegree(char* buffer, int source) {
+    int* newDegree = (int*) buffer;
+    std::cout << MPI_MY_RANK << " received MSG_NEW_SOLUTION from " << source
+             << " of degree " << (*newDegree) << std::endl;
+
+    KGM_UPPER_BOUND = (*newDegree);
+
+    if ((*newDegree) == KGM_LOWER_BOUND)
+        PROCESS_STATE = TERMINATING;
 }
 
 void sendWhiteToken() {
@@ -570,11 +588,8 @@ void receiveMessage() {
 			 }
 			 break;
 		 case MSG_NEW_SOLUTION :
-			 std::cout << MPI_MY_RANK << " received MSG_NEW_SOLUTION from " << status.MPI_SOURCE << std::endl;
 			 MPI_Recv(buffer, MSG_LENGTH, MPI_INT, status.MPI_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-			 // TODO process new solution - not sure what to do :o)
-			 // is it OK to just update the minDegree on the current process?
-			 // shouldn't we send the best skeleton as well, not just the rank?
+			 updateDegree(buffer, status.MPI_SOURCE);
 			 break;
 		 case MSG_FINISH :
 			  std::cout << MPI_MY_RANK << " received MSG_FINISH from " << status.MPI_SOURCE << std::endl;
@@ -595,12 +610,6 @@ void receiveMessage() {
 	}
 }
 
-void printResult(double time, uint64_t steps) {
-	std::cout << "-------------" << std::endl;
-	std::cout << "TOTAL STEPS: " << steps << std::endl;
-	std::cout << "In time: " << time << std::endl;
-}
-
 void initStack() {
 	dfs_state firstState;
 	g[KGM_START_NODE].state = true;
@@ -614,10 +623,6 @@ void initStack() {
 
 void iterateStack() {
 	degreeStack.push_back(0);
-
-	uint16_t minSPdegree = KGM_UPPER_BOUND;
-	uint64_t psteps = KGM_REPORT_INTERVAL;
-	boost::scoped_ptr<boost::timer> timer (new boost::timer);
 
 	while (!dfsStack.empty())
 	{
@@ -635,16 +640,15 @@ void iterateStack() {
 			return;
 		}
 
-		dfs_step(dfsStack, degreeStack, g, minSPdegree);
-		if (KGM_STEPS >= psteps)
+		dfs_step(dfsStack, degreeStack, g, KGM_UPPER_BOUND);
+		if (KGM_STEPS >= KGM_REPORT_NEXT)
 		{
-			std::cout << "Stack at " << timer->elapsed() << ":" << std::endl
+			std::cout << MPI_MY_RANK << "Stack report at " << KGM_TIMER->elapsed() << ":" << std::endl
 					<< make_pair(dfsStack.front(),g) << std::endl;
-			psteps += KGM_REPORT_INTERVAL;
+			KGM_REPORT_NEXT += KGM_REPORT_INTERVAL;
 		}
 	}
-	double time = timer->elapsed();
-	timer.reset();
+
 
 	PROCESS_STATE = NEED_WORK;
 }
@@ -704,8 +708,14 @@ int main(int argc, char ** argv) {
     	initStack();
     }
     std::cout << MPI_MY_RANK << ": Working..." << std::endl;
+
+    KGM_TIMER.reset(new boost::timer);
+
     work();
 
+    std::cout << MPI_MY_RANK << ": -------------" << std::endl;
+    std::cout << MPI_MY_RANK << ": TOTAL STEPS: " << KGM_STEPS << std::endl;
+    std::cout << MPI_MY_RANK << ": In time: " << KGM_TIMER->elapsed() << std::endl;
     MPI_Finalize();
 
     return 0;
