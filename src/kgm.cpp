@@ -25,7 +25,9 @@
 #include <stack>
 
 #include <stdint.h>
-#include "mpi.h"
+
+#include <mpi.h>
+#include <pthread.h>
 
 using namespace std;
 using namespace boost;
@@ -254,7 +256,6 @@ void dfs_step(
             stack.push_back(newState);
         else
         {
-            std::cout << "New spanning tree - degree: "<< degStack.back() << std::endl;
             degreeLimit = degStack.back();
             // TODO possible spanning tree improvement
             std::cout << stack << std::endl;
@@ -339,23 +340,34 @@ void sendWork(int processNumber) {
         return;
     (*it).v_it_end = newVIt;
 
-    kgm_vertex_iterator gi, gi_end;
     char* outputBuffer = new char [sizeof(uint16_t)*(KGM_GRAPH_SIZE*2 + 5)];
     uint16_t* outputBuffer16 = (uint16_t*) outputBuffer;
     int i = 1, cnt = 0;
+    std::cout << MPI_MY_RANK << ": sending work - degree at level: " << it-dfsStack.begin()
+            <<"( of"<< degreeStack.size() << ") = " << degreeStack.at(it-dfsStack.begin()) << std::endl;
     outputBuffer16[i++] = (uint16_t)(degreeStack.at(it-dfsStack.begin())); // spanning tree degree
     outputBuffer16[i++] = (uint16_t)(*newVIt); // starting state - v_it
     outputBuffer16[i++] = (uint16_t)(*newVIt_end); // starting state - v_it_end
-    for (tie (gi, gi_end) = vertices(g); gi != gi_end; ++gi)
+    dfs_stack::iterator git;
+    ++it;
+    for (git = dfsStack.begin(); git != it; ++git)
     {
-        if (g[(*gi)].state == true)
-        {
-            outputBuffer16[i++] = (uint16_t)(*gi);
+            outputBuffer16[i++] = (uint16_t)(*((*git).v_it));
             ++cnt;
-        }
     }
     outputBuffer16[0] = (uint16_t)(cnt); // number of visited states - depth
     outputBuffer16[i++] = (uint16_t) 0; // terminating 00 bytes
+
+    std::stringstream ss;
+    ss << "[ ";
+    for (int j = 0; j < i; ++j)
+    {
+        ss << outputBuffer16[j] << " ";
+    }
+    ss << "]";
+    std::cout << MPI_MY_RANK << ": sent work - length (of uint16_t): " << i
+            << " to " << processNumber << std::endl
+            << ss.str() << std::endl;
 
     MPI_Send (outputBuffer, i*sizeof(uint16_t), MPI_CHAR, processNumber, MSG_WORK_SENT, MPI_COMM_WORLD);
     delete[] outputBuffer;
@@ -370,12 +382,26 @@ void acceptWork(MPI_Status& status) {
     MPI_Get_count(&status, MPI_CHAR, &receivedNum);
 
     int total16 = receivedNum / sizeof(uint16_t); // uint32_t index
-    std::cout << MPI_MY_RANK << ": received work - total of uint32_t: " << total16 << std::endl;
+    std::stringstream ss;
+    ss << "[ ";
+    for (int i = 0; i < total16; ++i)
+    {
+        ss << inputBuffer16[i] << " ";
+    }
+    ss << "]";
+    std::cout << MPI_MY_RANK << ": received work - length (of uint16_t): " << total16
+            << " from " << status.MPI_SOURCE << std::endl
+            << ss.str() << std::endl;
+
     if (inputBuffer[total16-1] != 0)
     {
         std::cout << MPI_MY_RANK <<
-                ": ERROR - acceptWork char* bad format - LAST UINT32_T != 0" << std::endl;
-        throw("ERROR - acceptWork char* bad format - LAST UINT32_T != 0");
+                ": ERROR - acceptWork char* bad format - LAST UINT16_T != 0" << std::endl;
+        throw("ERROR - acceptWork char* bad format - LAST UINT16_T != 0");
+    }
+    else {
+        std::cout << MPI_MY_RANK <<
+                ": OK - acceptWork char* valid format - LAST UINT16_T == 0" << std::endl;
     }
 
     int numberOfVisitedNodes = inputBuffer16[0];
@@ -394,7 +420,7 @@ void acceptWork(MPI_Status& status) {
 
     // Initialize graph state from message
     uint16_t visitedNodesCnt = 0;
-    for (int j = 4, j_end = total16-1; j != j_end; j+=2)
+    for (int j = 4, j_end = total16-1; j < j_end; j+=2)
     {
         g[inputBuffer16[j]].state = true;
         g[inputBuffer16[j]].degree = inputBuffer16[j+1];
@@ -406,18 +432,27 @@ void acceptWork(MPI_Status& status) {
                 ": ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes" << std::endl;
         throw("ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes");
     }
+    else
+    {
+        std::cout << MPI_MY_RANK <<
+                ": OK - acceptWork char* valid format - inputBuffer16[0] == visited nodes" << std::endl;
+    }
 
     // Clear dfs stack and initialize first state
     dfsStack.clear();
     dfs_state firstState;
     tie(firstState.v_it, firstState.v_it_end) = vertices(g);
     firstState.v_it += inputBuffer16[2];
-    firstState.v_it_end += inputBuffer16[3];
+    firstState.v_it_end = firstState.v_it + (inputBuffer16[3] - inputBuffer16[2]);
     tie(firstState.a_it, firstState.a_it_end) = adjacent_vertices(*(firstState.v_it),g);
     if (!isValid_dfs_state(firstState, g))
         iterate_dfs_state(firstState, g);
     dfsStack.push_back(firstState);
 
+        std::cout << MPI_MY_RANK << ": successfully accepted work" << std::endl
+                << "   dfs stack size: " << dfsStack.size() << std::endl
+                << "   degree: " << degreeStack.back() << std::endl
+                << "   visited nodes: " << visitedNodesCnt << std::endl;
 }
 
 void requestWork() {
@@ -443,6 +478,7 @@ void divideWork() {
 	int processNumber = 1; // starting with the next process
 	while(hasExtraWork() && processNumber < MPI_PROCESSES) {
 		sendWork(processNumber);
+		++processNumber;
 	}
 	PROCESS_STATE = WORKING;
 }
@@ -471,9 +507,11 @@ void receiveMessage() {
 	int flag = 0;
 	MPI_Status status;
 
+//	std::cout << MPI_MY_RANK << ": receiving messages..." << std::endl;
 	MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
 	if (flag)
 	{
+	  std::cout << MPI_MY_RANK << ": received message of type: " << status.MPI_TAG << std::endl;
 	  char* buffer = new char[MSG_LENGTH];
 	  switch (status.MPI_TAG)
 	  {
@@ -491,6 +529,7 @@ void receiveMessage() {
 			 break;
 		 case MSG_WORK_SENT :
 			 acceptWork(status);
+			 std::cout << MPI_MY_RANK << " work successfully accepted from " << status.MPI_SOURCE << std::endl;
 			 PROCESS_STATE = WORKING;
 			 MPI_WORK_REQUEST_FAILS_NUMBER = 0;
 			 break;
@@ -546,6 +585,14 @@ void receiveMessage() {
 			 break;
 	  }
 	}
+	else
+	{
+	    int milisec = 100;
+	    struct timespec req = {0};
+	    req.tv_sec = 0;
+	    req.tv_nsec = milisec * 1000000L;
+	    nanosleep(&req, (struct timespec *)NULL);
+	}
 }
 
 void printResult(double time, uint64_t steps) {
@@ -574,15 +621,16 @@ void iterateStack() {
 
 	while (!dfsStack.empty())
 	{
+		++KGM_STEPS;
 		if ((KGM_STEPS % CHECK_MSG_AMOUNT)==0)
 		{
 			receiveMessage();
 			return;
 		}
 
-		if(PROCESS_STATE == WARMUP && KGM_STEPS == KGM_GRAPH_SIZE) {
+		if(PROCESS_STATE == WARMUP && KGM_STEPS >= KGM_GRAPH_SIZE) {
 			// time to divide work to other processes
-			std::cout << "Attemp to divide work" << std::endl;
+			std::cout << MPI_MY_RANK << ": Attemp to divide work" << std::endl;
 			divideWork();
 			return;
 		}
@@ -594,7 +642,6 @@ void iterateStack() {
 					<< make_pair(dfsStack.front(),g) << std::endl;
 			psteps += KGM_REPORT_INTERVAL;
 		}
-		++KGM_STEPS;
 	}
 	double time = timer->elapsed();
 	timer.reset();
@@ -653,9 +700,10 @@ int main(int argc, char ** argv) {
 
     if(MPI_MY_RANK == 0) {
     	PROCESS_STATE = WARMUP;
-
+    	std::cout << "1: Initializing stack" << std::endl;
     	initStack();
     }
+    std::cout << MPI_MY_RANK << ": Working..." << std::endl;
     work();
 
     MPI_Finalize();
