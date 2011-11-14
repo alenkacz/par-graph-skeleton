@@ -106,11 +106,17 @@ struct dfs_state {
     kgm_adjacency_iterator a_it;
     kgm_adjacency_iterator a_it_end;
 };
+struct i_dfs_state {
+    uint16_t v;
+    uint16_t a;
+};
 typedef std::vector<dfs_state> dfs_stack;
+typedef std::vector<i_dfs_state> i_dfs_stack;
 typedef std::stack<kgm_edge_descriptor> kgm_stack;
 typedef std::vector<uint16_t> degree_stack;
 
 ugraph g;
+i_dfs_stack inactiveDfsStack;
 dfs_stack dfsStack;
 degree_stack degreeStack;
 
@@ -210,6 +216,13 @@ ostream& operator<< (ostream& out, const dfs_stack& stack)
         out << *it;
     return out;
 }
+ostream& operator<< (ostream& out, const i_dfs_stack& stack)
+{
+    for (i_dfs_stack::const_iterator it = stack.begin();
+            it != stack.end(); ++it)
+        out << "[" << (*it).v << "->" << (*it).a << "]";
+    return out;
+}
 
 void broadcastNewSolution(uint16_t& degreeLimit) {
     std::cout << MPI_MY_RANK << ": broadcasting new solution of degree = " << degreeLimit << std::endl;
@@ -262,7 +275,7 @@ void dfs_step(
             degreeLimit = degStack.back();
             // TODO possible spanning tree improvement
             std::cout << MPI_MY_RANK << ": New spanning tree of degree: "<< degreeLimit << std::endl
-                    << stack << std::endl;
+                    << MPI_MY_RANK << ": " << inactiveDfsStack << stack << std::endl;
 
             broadcastNewSolution(degreeLimit);
         }
@@ -428,12 +441,16 @@ void acceptWork(MPI_Status& status) {
         g[(*vi)].state = false;
         g[(*vi)].degree = 0;
     }
+    inactiveDfsStack.clear();
 
     // Initialize graph state from message
     int visitedEdgesCnt = 0;
     g[inputBuffer16[2]].state = true;
     for (int j = 4, j_end = total16-1; j < j_end; j+=2)
     {
+        i_dfs_state istate;
+        istate.v = inputBuffer16[j];
+        istate.a = inputBuffer16[j+1];
         g[inputBuffer16[j]].state = true;
         g[inputBuffer16[j]].degree++;
         g[inputBuffer16[j+1]].state = true;
@@ -502,6 +519,7 @@ void requestWork() {
 }
 
 void divideWork() {
+    std::cout << MPI_MY_RANK << ": divideWork()" << std::endl;
 	int processNumber = 1; // starting with the next process
 	while(hasExtraWork() && processNumber < MPI_PROCESSES) {
 		sendWork(processNumber);
@@ -655,11 +673,6 @@ void iterateStack() {
 		if ((KGM_STEPS % CHECK_MSG_AMOUNT)==0)
 		{
 			receiveMessage();
-
-//			std::cout << MPI_MY_RANK << ": Stack report at " << KGM_TIMER->elapsed() << ":" << std::endl
-//					<< dfsStack << std::endl;
-
-
 			return;
 		}
 
@@ -674,7 +687,7 @@ void iterateStack() {
 		if (KGM_STEPS >= KGM_REPORT_NEXT)
 		{
 			std::cout << MPI_MY_RANK << ": Stack report at " << KGM_TIMER->elapsed() << ":" << std::endl
-					<< make_pair(dfsStack.front(),g) << std::endl;
+					<< dfsStack << std::endl;
 			KGM_REPORT_NEXT += KGM_REPORT_INTERVAL;
 		}
 	}
