@@ -210,6 +210,14 @@ ostream& operator<< (ostream& out, const dfs_stack& stack)
     return out;
 }
 
+void sendFinish() {
+	int message = 1;
+	for(int i = 1; i < MPI_PROCESSES; i++) {
+		MPI_Send (&message, 1, MPI_INT, i, MSG_FINISH, MPI_COMM_WORLD);
+	}
+	running = false;
+}
+
 void broadcastNewSolution(uint16_t& degreeLimit) {
     std::cout << MPI_MY_RANK << ": broadcasting new solution of degree = " << degreeLimit << std::endl;
 	for( int i = 0; i < MPI_PROCESSES; i++ ) {
@@ -262,8 +270,11 @@ void dfs_step(
             // TODO possible spanning tree improvement
             std::cout << MPI_MY_RANK << ": New spanning tree of degree: "<< degreeLimit << std::endl
                     << stack << std::endl;
-
-            broadcastNewSolution(degreeLimit);
+	    if(MPI_MY_RANK == 0 && degreeLimit == KGM_LOWER_BOUND) { 
+	    	sendFinish();
+            } else {
+		broadcastNewSolution(degreeLimit);
+	    }
         }
 
         return;
@@ -503,14 +514,6 @@ void sendBlackToken() {
 	// sends white token to the next
 	int message = 1;
 	MPI_Send (&message, 1, MPI_INT, (MPI_MY_RANK + 1) % MPI_PROCESSES, MSG_TOKEN_BLACK, MPI_COMM_WORLD);
-}
-
-void sendFinish() {
-	int message = 1;
-	for(int i = 1; i < MPI_PROCESSES; i++) {
-		MPI_Send (&message, 1, MPI_INT, i, MSG_FINISH, MPI_COMM_WORLD);
-	}
-	running = false;
 }
 
 void updateDegree(char* buffer, int source) {
