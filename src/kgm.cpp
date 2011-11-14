@@ -493,20 +493,6 @@ void divideWork() {
 	PROCESS_STATE = WORKING;
 }
 
-void updateDegree(char* buffer, int source) {
-    int* newDegree = (int*) buffer;
-
-    std::cout << MPI_MY_RANK << " received MSG_NEW_SOLUTION from " << source
-             << " of degree " << (*newDegree) << std::endl
-             << "   while this process has a degree " << KGM_UPPER_BOUND << std::endl;
-
-    if ((*newDegree) < KGM_UPPER_BOUND)
-        KGM_UPPER_BOUND = (*newDegree);
-
-    if (KGM_UPPER_BOUND == KGM_LOWER_BOUND)
-        PROCESS_STATE = TERMINATING;
-}
-
 void sendWhiteToken() {
 	// sends white token to the next
 	int message = 1;
@@ -525,6 +511,23 @@ void sendFinish() {
 		MPI_Send (&message, 1, MPI_INT, i, MSG_FINISH, MPI_COMM_WORLD);
 	}
 	running = false;
+}
+
+void updateDegree(char* buffer, int source) {
+    int* newDegree = (int*) buffer;
+
+    std::cout << MPI_MY_RANK << " received MSG_NEW_SOLUTION from " << source
+             << " of degree " << (*newDegree) << std::endl
+             << "   while this process has a degree " << KGM_UPPER_BOUND << std::endl;
+
+    if ((*newDegree) < KGM_UPPER_BOUND)
+        KGM_UPPER_BOUND = (*newDegree);
+
+    if (KGM_UPPER_BOUND == KGM_LOWER_BOUND) {
+    	if(MPI_MY_RANK == 0) {
+    		sendFinish();
+    	}
+    }
 }
 
 void receiveMessage() {
