@@ -504,10 +504,10 @@ void acceptWork(MPI_Status& status) {
     }
     dfsStack.push_back(firstState);
 
-        std::cout << MPI_MY_RANK << ": successfully accepted work" << std::endl
-                << "   dfs stack size: " << dfsStack.size() << std::endl
-                << "   degree: " << degreeStack.back() << std::endl
-                << "   edges before this state: " << visitedEdgesCnt << std::endl;
+//        std::cout << MPI_MY_RANK << ": successfully accepted work" << std::endl
+//                << "   dfs stack size: " << dfsStack.size() << std::endl
+//                << "   degree: " << degreeStack.back() << std::endl
+//                << "   edges before this state: " << visitedEdgesCnt << std::endl;
 }
 
 void requestWork() {
