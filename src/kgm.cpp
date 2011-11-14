@@ -302,7 +302,7 @@ void readInputFromFile(std::string filename) {
 	boost::split(lines, contents, boost::is_any_of("\n"));
 
 	int m = lines.size()-2, n = lines[lines.size()-2].length();
-	std::cout << "loaded graph of size: " << m << "*" << n << std::endl;
+	//std::cout << "loaded graph of size: " << m << "*" << n << std::endl;
 	KGM_GRAPH_SIZE = n;
 	if (m != n && m <= 1)
 	{
@@ -389,8 +389,8 @@ void sendWork(int processNumber) {
     MPI_Send (outputBuffer, i*sizeof(uint16_t), MPI_CHAR, processNumber, MSG_WORK_SENT, MPI_COMM_WORLD);
     delete[] outputBuffer;
 
-    std::cout << MPI_MY_RANK << ": my stack after send: " << std::endl
-            << dfsStack << std::endl;
+    /*std::cout << MPI_MY_RANK << ": my stack after send: " << std::endl
+            << dfsStack << std::endl;*/
 }
 
 void acceptWork(MPI_Status& status) {
@@ -422,8 +422,8 @@ void acceptWork(MPI_Status& status) {
         throw("ERROR - acceptWork char* bad format - LAST UINT16_T != 0");
     }
     else {
-        std::cout << MPI_MY_RANK <<
-                ": OK - acceptWork char* valid format - LAST UINT16_T == 0" << std::endl;
+        /*std::cout << MPI_MY_RANK <<
+                ": OK - acceptWork char* valid format - LAST UINT16_T == 0" << std::endl;*/
     }
 
     int numberOfEdgesBefore = inputBuffer16[0];
@@ -461,10 +461,10 @@ void acceptWork(MPI_Status& status) {
     }
     else
     {
-        std::cout << MPI_MY_RANK <<
+        /*std::cout << MPI_MY_RANK <<
                 ": OK - acceptWork char* valid format - inputBuffer16[0] == visited edges" << std::endl
                 << "numberOfEdgesBefore = inputBuffer16[0] = " << inputBuffer16[0] << std::endl
-                << "visitedEdgesCnt = " << visitedEdgesCnt << std::endl;
+                << "visitedEdgesCnt = " << visitedEdgesCnt << std::endl;*/
     }
 
     // Clear dfs stack and initialize first state
@@ -479,11 +479,11 @@ void acceptWork(MPI_Status& status) {
 
     if (!isValid_dfs_state(firstState, g))
     {
-        std::cout << MPI_MY_RANK << ": is invalid" << std::endl;
+        //std::cout << MPI_MY_RANK << ": is invalid" << std::endl;
         iterate_dfs_state(firstState, g);
-        std::cout << MPI_MY_RANK << ": iterated to: " << firstState << std::endl;
+        //std::cout << MPI_MY_RANK << ": iterated to: " << firstState << std::endl;
     } else {
-        std::cout << MPI_MY_RANK << ": is valid" << std::endl;
+        //std::cout << MPI_MY_RANK << ": is valid" << std::endl;
     }
     dfsStack.push_back(firstState);
 
@@ -537,8 +537,8 @@ void updateDegree(char* buffer, int source) {
     int* newDegree = (int*) buffer;
 
     std::cout << MPI_MY_RANK << " received MSG_NEW_SOLUTION from " << source
-             << " of degree " << (*newDegree) << std::endl
-             << "   while this process has a degree " << KGM_UPPER_BOUND << std::endl;
+             << " of degree " << (*newDegree) << std::endl;
+             //<< "   while this process has a degree " << KGM_UPPER_BOUND << std::endl;
 
     if ((*newDegree) < KGM_UPPER_BOUND)
         KGM_UPPER_BOUND = (*newDegree);
@@ -668,7 +668,7 @@ void iterateStack() {
 
 		if(PROCESS_STATE == WARMUP && KGM_STEPS >= KGM_GRAPH_SIZE) {
 			// time to divide work to other processes
-			std::cout << MPI_MY_RANK << ": Attemp to divide work" << std::endl;
+			//std::cout << MPI_MY_RANK << ": Attemp to divide work" << std::endl;
 			divideWork();
 			return;
 		}
@@ -737,18 +737,17 @@ int main(int argc, char ** argv) {
 
     if(MPI_MY_RANK == 0) {
     	PROCESS_STATE = WARMUP;
-    	std::cout << "1: Initializing stack" << std::endl;
+    	//std::cout << "1: Initializing stack" << std::endl;
     	initStack();
     }
-    std::cout << MPI_MY_RANK << ": Working..." << std::endl;
+    //std::cout << MPI_MY_RANK << ": Working..." << std::endl;
 
     KGM_TIMER.reset(new boost::timer);
 
     work();
 
-    std::cout << MPI_MY_RANK << ": -------------" << std::endl;
-    std::cout << MPI_MY_RANK << ": TOTAL STEPS: " << KGM_STEPS << std::endl;
-    std::cout << MPI_MY_RANK << ": In time: " << KGM_TIMER->elapsed() << std::endl;
+    std::cout << MPI_MY_RANK << ": ***** ENDED in " << KGM_STEPS << " steps " << " and time:"
+    		<< KGM_TIMER->elapsed() << std::endl;
     MPI_Finalize();
 
     return 0;
