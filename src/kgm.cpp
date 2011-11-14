@@ -57,7 +57,7 @@ enum kgm_process_state { // states of the process
 #define MSG_TOKEN_BLACK  1006
 
 #define MSG_LENGTH 2048 // maximum length of message
-
+#define MSG_NOT_ViSITED 1000
 
 uint32_t KGM_GRAPH_SIZE;
 uint16_t KGM_UPPER_BOUND = 30;
@@ -67,6 +67,7 @@ uint32_t KGM_START_NODE = 0;
 uint64_t KGM_REPORT_INTERVAL = 0x10000000;
 uint64_t KGM_REPORT_NEXT = KGM_REPORT_INTERVAL;
 uint64_t KGM_STEPS = 0;
+uint32_t KGM_MINIMAL_SUBPROBLEM = 3;
 boost::scoped_ptr<boost::timer> KGM_TIMER;
 kgm_process_state PROCESS_STATE = LISTEN;
 bool running = true;
@@ -313,7 +314,7 @@ void readInputFromFile(std::string filename) {
 }
 
 bool hasExtraWork() {
-    for (dfs_stack::iterator it = dfsStack.begin(); it != dfsStack.end(); ++it)
+    for (dfs_stack::iterator it = dfsStack.begin(); it != (dfsStack.end()-1); ++it)
     {
         if ((*it).v_it != (*it).v_it_end)
             return true;
@@ -326,7 +327,7 @@ void sendWork(int processNumber) {
     kgm_vertex_iterator newVIt, newVIt_end;
     dfs_stack::iterator it;
     bool ok = false;
-    for (it = dfsStack.begin(); it != dfsStack.end(); ++it)
+    for (it = dfsStack.begin(); it != (dfsStack.end()-1); ++it)
     {
         difference = (*it).v_it_end-(*it).v_it;
         if (difference > 1)
@@ -355,7 +356,7 @@ void sendWork(int processNumber) {
     for (git = dfsStack.begin(); git != it; ++git)
     {
         outputBuffer16[i++] = (uint16_t)(*((*git).v_it));
-        outputBuffer16[i++] = (uint16_t)g[(*((*git).v_it))].degree;
+        outputBuffer16[i++] = (uint16_t)(*((*git).a_it));
         ++cnt;
     }
     outputBuffer16[0] = (uint16_t)(cnt); // number of visited states - depth
@@ -409,7 +410,7 @@ void acceptWork(MPI_Status& status) {
                 ": OK - acceptWork char* valid format - LAST UINT16_T == 0" << std::endl;
     }
 
-    int numberOfVisitedNodes = inputBuffer16[0];
+    int numberOfEdgesBefore = inputBuffer16[0];
 
     // Clear degree stack, put first state's degree into the stack
     degreeStack.clear();
@@ -424,25 +425,27 @@ void acceptWork(MPI_Status& status) {
     }
 
     // Initialize graph state from message
-    int visitedNodesCnt = 0;
+    int visitedEdgesCnt = 0;
     for (int j = 4, j_end = total16-1; j < j_end; j+=2)
     {
         g[inputBuffer16[j]].state = true;
-        g[inputBuffer16[j]].degree = inputBuffer16[j+1];
-        ++visitedNodesCnt;
+        g[inputBuffer16[j]].degree++;
+        g[inputBuffer16[j+1]].state = true;
+        g[inputBuffer16[j+1]].degree++;
+        ++visitedEdgesCnt;
     }
-    if (numberOfVisitedNodes != visitedNodesCnt)
+    if (numberOfEdgesBefore != visitedEdgesCnt)
     {
         std::cout << MPI_MY_RANK <<
                 ": ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes" << std::endl
-                << "numberOfVisitedNodes = inputBuffer16[0] = " << inputBuffer16[0] << std::endl
-                << "visitedNodesCnt = " << visitedNodesCnt << std::endl;
-        throw("ERROR - acceptWork char* bad format - inputBuffer16[0] != visited nodes");
+                << "numberOfEdgesBefore = inputBuffer16[0] = " << inputBuffer16[0] << std::endl
+                << "visitedEdgesCnt = " << visitedEdgesCnt << std::endl;
+        throw("ERROR - acceptWork char* bad format - inputBuffer16[0] != visited edges");
     }
     else
     {
         std::cout << MPI_MY_RANK <<
-                ": OK - acceptWork char* valid format - inputBuffer16[0] == visited nodes" << std::endl;
+                ": OK - acceptWork char* valid format - inputBuffer16[0] == visited edges" << std::endl;
     }
 
     // Clear dfs stack and initialize first state
@@ -459,7 +462,7 @@ void acceptWork(MPI_Status& status) {
         std::cout << MPI_MY_RANK << ": successfully accepted work" << std::endl
                 << "   dfs stack size: " << dfsStack.size() << std::endl
                 << "   degree: " << degreeStack.back() << std::endl
-                << "   visited nodes: " << visitedNodesCnt << std::endl;
+                << "   edges before this state: " << visitedEdgesCnt << std::endl;
 }
 
 void requestWork() {
@@ -492,12 +495,15 @@ void divideWork() {
 
 void updateDegree(char* buffer, int source) {
     int* newDegree = (int*) buffer;
+
     std::cout << MPI_MY_RANK << " received MSG_NEW_SOLUTION from " << source
-             << " of degree " << (*newDegree) << std::endl;
+             << " of degree " << (*newDegree) << std::endl
+             << "   while this process has a degree " << KGM_UPPER_BOUND << std::endl;
 
-    KGM_UPPER_BOUND = (*newDegree);
+    if ((*newDegree) < KGM_UPPER_BOUND)
+        KGM_UPPER_BOUND = (*newDegree);
 
-    if ((*newDegree) == KGM_LOWER_BOUND)
+    if (KGM_UPPER_BOUND == KGM_LOWER_BOUND)
         PROCESS_STATE = TERMINATING;
 }
 
