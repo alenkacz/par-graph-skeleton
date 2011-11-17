@@ -60,13 +60,11 @@ enum kgm_process_state { // states of the process
 
 uint32_t KGM_GRAPH_SIZE;
 uint16_t KGM_UPPER_BOUND = 30;
-uint32_t KGM_ACTUAL_MIN_BOUND = KGM_UPPER_BOUND; // min degree
 uint32_t KGM_LOWER_BOUND = 2;
 uint32_t KGM_START_NODE = 0;
-uint64_t KGM_REPORT_INTERVAL = 0x100000;
+uint64_t KGM_REPORT_INTERVAL = 0x10000000;
 uint64_t KGM_REPORT_NEXT = KGM_REPORT_INTERVAL;
 uint64_t KGM_STEPS = 0;
-uint32_t KGM_MINIMAL_SUBPROBLEM = 3;
 boost::scoped_ptr<boost::timer> KGM_TIMER;
 kgm_process_state PROCESS_STATE = LISTEN;
 bool running = true;
