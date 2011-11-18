@@ -1,0 +1,54 @@
+\documentclass[]{article} 
+\usepackage[czech]{babel}
+\usepackage[IL2]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{graphicx}
+\usepackage{colortbl}
+\usepackage{stmaryrd}
+\usepackage{pifont}
+\usepackage{hyperref}
+
+\oddsidemargin=-5mm
+\evensidemargin=-5mm\marginparwidth=.08in \marginparsep=.01in
+\marginparpush=5pt\topmargin=-15mm\headheight=12pt
+%\headsep=25pt\footheight=12pt \footskip=30pt\textheight=25cm
+\textwidth=17cm\columnsep=2mm
+\columnseprule=1pt\parindent=15pt\parskip=2pt
+
+\begin{document}
+\begin{center}
+\bf Semestralni projekt MI-PAR 2011/2012:\\[5mm]
+    Kostra grafu s minimálním stupněm\\[5mm] 
+       Luboš Krčál\\
+       Alena Varkočková\\[2mm]
+magisterské studium, FIT CVUT, Kolejní 550/2, 160 00 Praha 6\\[2mm]
+\today
+\end{center}
+
+\section{Definice problému a popis sekvenčního algoritmu}
+
+\subsection{Vstupní data}
+$G(V,E)$ = jednoduchý neorientovaný neohodnocený k-regulární graf o~$n$ uzlech a $m$ hranách\\
+$n$ = přirozené číslo představující počet uzlů grafu $G$, $n \geq 5$\\
+$k$ = přirozené číslo řádu jednotek představující stupeň uzlu grafu $G$, $n \geq k \geq 3$; $n$ a $k$~nejsou současně obě liché\\
+\\
+Doporučení pro generování $G$:\\
+\\
+Usage: Graf byl generován pomocí poskytnutého \href{''https://edux.fit.cvut.cz/courses/MI-PAR/labs/zadani_semestralnich_praci/generator_grafu'}{'generátoru'} grafu s~volbou typu grafu \texttt{"-t REG"}, který vygeneruje souvislý neorientovaný neohodnocený graf.
+
+\subsection{Výstupní data}
+Výstupem programu je kosra grafu a její stupeň v následujícím formátu:
+
+\begin{verbatim}
+New spanning tree of degree: 3
+[0->6][0->7][0->13][6->4][4->3][3->1][1->2][1->8][2->12][3->5][4->10][6->14][7->9][7->11][14->15][15->16][15->17]
+\end{verbatim}
+
+\section{Popis paralelniho algoritmu a jeho implementace v MPI}
+
+\section{Namerene vysledky a vyhodnoceni}
+
+\section{Závěr}
+
+\end{document}
