@@ -773,6 +773,8 @@ int main(int argc, char ** argv) {
         return -1;
     }
 
+    double t1, t2;
+
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &MPI_MY_RANK); // my rank
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_PROCESSES); // number of processes
@@ -785,6 +787,8 @@ int main(int argc, char ** argv) {
 
 	readInputFromFile(filename);
 
+	t1 = MPI_Wtime();
+
     if(MPI_MY_RANK == 0) {
     	PROCESS_STATE = WARMUP;
     	//std::cout << "1: Initializing stack" << std::endl;
@@ -796,10 +800,17 @@ int main(int argc, char ** argv) {
 
     work();
 
-    std::cout << MPI_MY_RANK << ": ***** ENDED in " << KGM_STEPS << " steps " << " and time:"
-    		<< KGM_TIMER->elapsed() << std::endl;
-    MPI_Finalize();
+    MPI_Barrier(MPI_COMM_WORLD);
+	t2=MPI_Wtime();
 
-    return 0;
+	if(MPI_MY_RANK == 0) {
+		std::cout << MPI_MY_RANK << ": ***** ENDED in " << KGM_STEPS << " steps " << std::endl;
+
+		std::cout << MPI_MY_RANK << ": ***** ENDED in time " << t2-t1 << std::endl;
+	}
+
+	MPI_Finalize();
+
+	return 0;
 }
 
