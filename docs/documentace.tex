@@ -78,7 +78,7 @@ Každý graf byl testován třikrát a naměřené hodnoty jsou uvedeny v sekund
 \hline 
 \hline 500-20 & 0 & 0 & 0 & \textbf{0} \\ 
 \hline 15-6 & 0 & 0 & 0 & \textbf{0} \\ 
-\hline 18-6 & 0 & 0 & 0 & \textbf{0} \\ 
+\hline 18-6 & 354.75 & 354.76 & 365.02 & \textbf{358.18} \\ 
 \hline 
 \end{tabular}
 \caption{Doba běhu sekvenčního algoritmu pro vybrané grafy}
@@ -125,6 +125,23 @@ K ukončení výpočtu může dojít dvěma způsoby. První z nich je, že něk
 Druhou situací s jakou dojde k ukončení výpočtu je prohledání celého stavového prostoru bez nalezení nejmenšího možného řešení, tedy kostry se stupněm 2. Ukončení výpočtu v takovém případě může inicializovat kterýkoliv procesor. Pokud žádá o práci okolní procesory a přijde mu takový počet odmítnutí, jako je poloviční počet všech procesorů, je velká pravděpodobnost, že žádný procesor již nemá práci. Proto pošle následujícímu procesoru MSG TOKEN WHITE. Procesor, který tento token přijme, pošle ho dalšímu procesoru v případě, že nemá žádnou práci. V opačném případě začne posílat MSG TOKEN BLACK, který fázi ukončování zastaví. Pokud MSG WHITE TOKEN projde přes všechny procesory, dojde k odeslání MSG FINISH a ukončení výpočtu.
 
 \section{Naměřené výsledky a hodnocení}
+
+Měření pro graf 18-6
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{|l|c|c|c|c|}
+\hline \textbf{Počet procesorů} & \textbf{Ethernet} & \textbf{Infiband} & \textbf{rozdíl} \\
+\hline 
+\hline 2 & 256.48 & 192.45 & \textbf{0.25} \\ 
+\hline 5 & 119.4 & 63.66 & \textbf{0.47} \\ 
+\hline 12 & 74.08 & 62.68 &  \textbf{0.16} \\ 
+\hline 24 & 0 & 0 &  \textbf{0} \\ 
+\hline 
+\end{tabular}
+\caption{Doba běhu sekvenčního algoritmu pro vybrané grafy}
+\label{sekvencni_test}	
+\end{table}
 
 \section{Závěr}
 

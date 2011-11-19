@@ -803,11 +803,13 @@ int main(int argc, char ** argv) {
     MPI_Barrier(MPI_COMM_WORLD);
 	t2=MPI_Wtime();
 
-	if(MPI_MY_RANK == 0) {
+	std::cout << MPI_MY_RANK << ": ***** ENDED in time " << KGM_TIMER->elapsed() << std::endl;
+
+	/*if(MPI_MY_RANK == 0) {
 		std::cout << MPI_MY_RANK << ": ***** ENDED in " << KGM_STEPS << " steps " << std::endl;
 
 		std::cout << MPI_MY_RANK << ": ***** ENDED in time " << t2-t1 << std::endl;
-	}
+	}*/
 
 	MPI_Finalize();
 
