@@ -1,0 +1,163 @@
+\documentclass[]{article} 
+\usepackage[czech]{babel}
+\usepackage[IL2]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{graphicx}
+\usepackage{colortbl}
+\usepackage{stmaryrd}
+\usepackage{pifont}
+\usepackage{hyperref}
+
+\newcommand\fnurl[2]{%
+  \href{#2}{#1}\footnote{\url{#2}}%
+}
+
+\oddsidemargin=-5mm
+\evensidemargin=-5mm\marginparwidth=.08in \marginparsep=.01in
+\marginparpush=5pt\topmargin=-15mm\headheight=12pt
+%\headsep=25pt\footheight=12pt \footskip=30pt\textheight=25cm
+\textwidth=17cm\columnsep=2mm
+\columnseprule=1pt\parindent=15pt\parskip=2pt
+
+\begin{document}
+\begin{center}
+\bf Semestralni projekt MI-PAR 2011/2012:\\[5mm]
+    Kostra grafu s minimálním stupněm\\[5mm] 
+       Luboš Krčál\\
+       Alena Varkočková\\[2mm]
+magisterské studium, FIT CVUT, Kolejní 550/2, 160 00 Praha 6\\[2mm]
+\today
+\end{center}
+
+\section{Definice problému a popis sekvenčního algoritmu}
+
+\subsection{Vstupní data}
+$G(V,E)$ = jednoduchý neorientovaný neohodnocený k-regulární graf o~$n$ uzlech a $m$ hranách\\
+$n$ = přirozené číslo představující počet uzlů grafu $G$, $n \geq 5$\\
+$k$ = přirozené číslo řádu jednotek představující stupeň uzlu grafu $G$, $n \geq k \geq 3$; $n$ a $k$~nejsou současně obě liché\\
+\\
+Doporučení pro generování $G$:\\
+\\
+Usage: Graf byl generován pomocí poskytnutého \href{''https://edux.fit.cvut.cz/courses/MI-PAR/labs/zadani_semestralnich_praci/generator_grafu'}{'generátoru'} grafu s~volbou typu grafu \texttt{"-t REG"}, který vygeneruje souvislý neorientovaný neohodnocený graf.
+
+\subsection{Úkol}
+Nalezněte kostru grafu G (strom) s minimálním stupněm. Řešení existuje vždy, vždy lze sestrojit kostru grafu. Sekvenční algoritmus je typu BB-DFS s hloubkou prohledávaného prostoru omezenou na $|V|$. Přípustný mezistav je definovaný částečnou kostrou. Přípustný koncový stav je vytvořená kostra. Algoritmus končí po prohledání celého prostoru či při dosažení dolní meze. Cena, kterou minimalizujeme, je stupeň kostry.
+
+\subsection{Výstupní data}
+Výstupem programu je kosra grafu a její stupeň. Po informaci o stupni aktuálně nalezené kostry následuje posloupnost jednotlivých hran kostry, které jsou identifikovány čísly uzlů - počátečního a konečného. Příklad výstupu u grafu o 18 uzlech:
+
+\begin{verbatim}
+New spanning tree of degree: 3
+[0->6][0->7][0->13][6->4][4->3][3->1][1->2][1->8][2->12][3->5][4->10][6->14][7->9][7->11]
+[14->15][15->16][15->17]
+\end{verbatim}
+
+\subsection{Implementace sekvenčního algoritmu}
+Pro reprezentaci grafu byla v sekvenčním i paralelním řešení použita grafová knihovna \fnurl{Boost}{http://www.boost.org/doc/libs/1_36_0/libs/graph/doc/}, konkrétně třída \fnurl{adjacency list}{http://www.boost.org/doc/libs/1_36_0/libs/graph/doc/adjacency_list.html}.
+
+Hledání kostry je realizováno pomocí prohledávání do hloubky (DFS). Při prohledávání jsou na stack (std::vector) ukládán vlastní struct, "dfs state". Každý stav je tedy definován pomocí čtyř iterátorů - vertex iterator, vertex iterator end, adjacency iterator a adjacency iterator end. Vertex iterátor iteruje přes uzly grafu, adjacency iterator přes všechny následovníky aktuálního uzlu. Koncové iterátory ukazují na konec prohledávaného prostoru.
+
+Další zásobník (tentokráte $std::vector<uint16_t>$) je použit pro ukládání aktuálního maximálního stupně kostry. 
+
+\subsection{Naměřené hodnoty sekvenčního algoritmu}
+Při testování sekvenčního algoritmu byly použity následující grafy:
+
+\begin{itemize}
+  \item \textit{????} - ???
+  \item \textit{???} - graf s počtem uzlů ???, ovšem takovou, že její odhalení sekvenčnímu algoritmu trvá déle
+  \item \textit{18-6} - graf s počtem uzlů 18 a průměrným stupněm 6, neobsahuje kostru s minimálním stupněm 2
+\end{itemize}
+
+Každý graf byl testován třikrát a naměřené hodnoty jsou uvedeny v sekundách. Výsledky všech tří měření byly zprůměrovány a jsou uvedeny v posledním sloupci.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{|l|c|c|c|c|}
+\hline \textbf{Typ matice} & \textbf{1.měření} & \textbf{2.měření} & \textbf{3.měření} & \textbf{průměrný čas} \\
+\hline 
+\hline 500-20 & 0 & 0 & 0 & \textbf{0} \\ 
+\hline 15-6 & 0 & 0 & 0 & \textbf{0} \\ 
+\hline 18-6 & 354.75 & 354.76 & 365.02 & \textbf{358.18} \\ 
+\hline 
+\end{tabular}
+\caption{Doba běhu sekvenčního algoritmu pro vybrané grafy}
+\label{sekvencni_test}	
+\end{table}
+
+\section{Popis paralelního algoritmu a jeho implementace v MPI}
+
+\subsection{Hlavní smyčka programu}
+Paralelní řešení programu pracuje na principu master/slave. Po začátku programu totiž pracuje pouze procesor s číslem 0, který má za úkol načíst ze vstupního souboru data a zahájit výpočet. Poté co našel první kostru a dá se očekávat, že má k dispozici dostatek práce k rozdání ostatním procesorům, rozdělí zásobník mezi ostatní procesory a ty začnou také počítat.
+
+Procesory se v průběhu výpočtu mohou nacházet v následujících stavech:
+\begin{itemize}
+  \item \textit{LISTEN} - stav, ve kterém se nachází všechny procesy kromě nultého v době začátku programu před tím, než nultý procesor rozešle práci
+  \item \textit{WARMUP} - stav, ve kterém se nachází pouze nultý proces (master) po startu programu před tím, než je schopný rozdat práci ostatním
+  \item \textit{WORKING} - proces má dostatek práce a prochází zásobníkem stavů a hledá kostry
+  \item \textit{NEED WORK} - procesor nemá práci, pouze přijímá zprávy a rozesílá žádosti o práce
+  \item \textit{TERMINATING} - výpočet pravděpodobně končí, proces čeká na potvrzení od nultého procesoru
+  \item \textit{FINISHED} - proces ukončil práci a vyskočil z hlavní pracovní smyčky
+\end{itemize}
+
+Ve chvíli, kdy je proces ve stavu WORKING je nucen každých 100 kroků algoritmu přijmout zprávu a zpracovat ji. Zprávy jsou identifikovány pomocí celočíselných konstant:
+
+\begin{itemize}
+  \item \textit{MSG WORK REQUEST} - žádost o práci
+  \item \textit{MSG WORK SENT} - příchozí práce
+  \item \textit{MSG WORK NOWORK} - proces, kterému byla poslána žádost o práci nemá žádnou k rozdělení
+  \item \textit{MSG FINISH} - výpočet se ukončuje
+  \item \textit{MSG NEW SOLUTION} - broadcast hodnoty nového nejlepšího nalezeného řešení
+  \item \textit{MSG TOKEN WHITE} - posílá proces, který si myslí, že je na čase ukončit výpočet
+  \item \textit{MSG TOKEN BLACK } - posílá proces, kterému přišel MSG TOKEN WHITE, ale on má stále k dispozici práci
+\end{itemize}
+
+TODO možná ještě bude potřeba něco dopsat
+
+\subsection{Implementace dělení práce}
+
+TODO Luboš
+
+\subsection{Ukončení výpočtu}
+
+K ukončení výpočtu může dojít dvěma způsoby. První z nich je, že některý z procesů našel kostru s nejmenším možným stupněm, tedy 2. V takovém případě rozešle nové řešení všem procesorům broadcastem. Poté, co dvojkové řešení dorazí k procesoru 0, okamžitě ukončí výpočet a všem ostatním procesorům počle zprávu typu MSG FINISH. Tu může posílat pouze master (procesor 0) a všechny ostatní procesory ihned poté, co ji přijmou, ukončí výpočet.
+
+Druhou situací s jakou dojde k ukončení výpočtu je prohledání celého stavového prostoru bez nalezení nejmenšího možného řešení, tedy kostry se stupněm 2. Ukončení výpočtu v takovém případě může inicializovat kterýkoliv procesor. Pokud žádá o práci okolní procesory a přijde mu takový počet odmítnutí, jako je poloviční počet všech procesorů, je velká pravděpodobnost, že žádný procesor již nemá práci. Proto pošle následujícímu procesoru MSG TOKEN WHITE. Procesor, který tento token přijme, pošle ho dalšímu procesoru v případě, že nemá žádnou práci. V opačném případě začne posílat MSG TOKEN BLACK, který fázi ukončování zastaví. Pokud MSG WHITE TOKEN projde přes všechny procesory, dojde k odeslání MSG FINISH a ukončení výpočtu.
+
+\section{Naměřené výsledky a hodnocení}
+
+Měření pro graf 18-6
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{|l|c|c|c|c|}
+\hline \textbf{Počet procesorů} & \textbf{Ethernet} & \textbf{Infiband} & \textbf{rozdíl} \\
+\hline 
+\hline 2 & 256.48 & 192.45 & \textbf{0.25} \\ 
+\hline 5 & 119.4 & 63.66 & \textbf{0.47} \\ 
+\hline 12 & 74.08 & 62.68 &  \textbf{0.16} \\ 
+\hline 24 & 74.64 & 59.04 &  \textbf{0.21} \\ 
+\hline 
+\end{tabular}
+\caption{Doba běhu sekvenčního algoritmu pro vybrané grafy}
+\label{sekvencni_test}	
+\end{table}
+
+\section{Závěr}
+
+\newpage
+\begin{thebibliography}{9}
+
+\bibitem{par}
+{\em Pavel Tvrdík}
+       {\bf Parallel Algorithms and Computing}\\
+		Vydavatelství ČVUT, 2. vydání. Duben 2009
+
+\bibitem{edux}
+{\em EDUX FIT ČVUT}
+       {\bf edux.fit.cvut.cz}\\
+       \url{https://edux.fit.cvut.cz/courses/MI-PAR/}, [cit. 2011-11-18]
+       
+ \end{thebibliography}
+
+\end{document}
