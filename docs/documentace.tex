@@ -54,20 +54,23 @@ New spanning tree of degree: 3
 \end{verbatim}
 
 \subsection{Implementace sekvenčního algoritmu}
-Pro reprezentaci grafu byla v sekvenčním i paralelním řešení použita grafová knihovna \fnurl{Boost}{http://www.boost.org/doc/libs/1_36_0/libs/graph/doc/}, konkrétně třída \fnurl{adjacency list}{http://www.boost.org/doc/libs/1_36_0/libs/graph/doc/adjacency_list.html}.
+Pro reprezentaci grafu byla v sekvenčním i paralelním řešení použita grafová knihovna \fnurl{Boost Graph Library}{http://www.boost.org/doc/libs/1_48_0/libs/graph/doc/}, konkrétně třída \verb|boost::graph<std::vector, std::vector, unoriented>|.
 
-Hledání kostry je realizováno pomocí prohledávání do hloubky (DFS). Při prohledávání jsou na stack (std::vector) ukládán vlastní struct, "dfs state". Každý stav je tedy definován pomocí čtyř iterátorů - vertex iterator, vertex iterator end, adjacency iterator a adjacency iterator end. Vertex iterátor iteruje přes uzly grafu, adjacency iterator přes všechny následovníky aktuálního uzlu. Koncové iterátory ukazují na konec prohledávaného prostoru.
+Hledání kostry je realizováno pomocí prohledávání do hloubky (DFS). Při prohledávání jsou na stack (\verb|std::vector<dfs_state>|) ukládán vlastní struct, \verb|dfs state|. Každý stav je tedy definován pomocí čtyř iterátorů - vertex iterator, vertex iterator end, adjacency iterator a adjacency iterator end. Vertex iterátor iteruje přes uzly grafu, adjacency iterator přes všechny následovníky aktuálního uzlu. Koncové iterátory ukazují na konec prohledávaného prostoru.
 
-Další zásobník (tentokráte $std::vector<uint16_t>$) je použit pro ukládání aktuálního maximálního stupně kostry. 
+Další zásobník (tentokráte \verb|std::vector<uint16_t>|) je použit pro ukládání aktuálního maximálního stupně kostry pro každý stav aktuálně uložený na zásobníku.
 
 \subsection{Naměřené hodnoty sekvenčního algoritmu}
+\label{grafy}
 Při testování sekvenčního algoritmu byly použity následující grafy:
 
 \begin{itemize}
-  \item \textit{????} - ???
-  \item \textit{???} - graf s počtem uzlů ???, ovšem takovou, že její odhalení sekvenčnímu algoritmu trvá déle
-  \item \textit{18-6} - graf s počtem uzlů 18 a průměrným stupněm 6, neobsahuje kostru s minimálním stupněm 2
+  \item \textit{A} - graf s počtem uzlů 18, vysoký průměrný stupeň, hodně koster stupně 3, žádná kostra stupně 2, rovnoměrný stavový prostor
+  \item \textit{B} - graf s počtem uzlů 25, neurčitý průměrný stupeň, kostra stupně 3 hluboko ve stavovém prostoru, neobsahuje kostru stupně 2
+  \item \textit{C} - graf s počtem uzlů 18 a průměrným stupněm 6, neobsahuje kostru s minimálním stupněm 2
 \end{itemize}
+
+TODO smazat?
 
 Každý graf byl testován třikrát a naměřené hodnoty jsou uvedeny v sekundách. Výsledky všech tří měření byly zprůměrovány a jsou uvedeny v posledním sloupci.
 
@@ -76,9 +79,9 @@ Každý graf byl testován třikrát a naměřené hodnoty jsou uvedeny v sekund
 \begin{tabular}{|l|c|c|c|c|}
 \hline \textbf{Typ matice} & \textbf{1.měření} & \textbf{2.měření} & \textbf{3.měření} & \textbf{průměrný čas} \\
 \hline 
-\hline 500-20 & 0 & 0 & 0 & \textbf{0} \\ 
-\hline 15-6 & 0 & 0 & 0 & \textbf{0} \\ 
-\hline 18-6 & 354.75 & 354.76 & 365.02 & \textbf{358.18} \\ 
+\hline A & - & - & - & \textbf{2288.95} \\ 
+\hline B & - & - & - & \textbf{187.82} \\ 
+\hline C & 354.75 & 354.76 & 365.02 & \textbf{358.18} \\ 
 \hline 
 \end{tabular}
 \caption{Doba běhu sekvenčního algoritmu pro vybrané grafy}
@@ -112,11 +115,21 @@ Ve chvíli, kdy je proces ve stavu WORKING je nucen každých 100 kroků algorit
   \item \textit{MSG TOKEN BLACK } - posílá proces, kterému přišel MSG TOKEN WHITE, ale on má stále k dispozici práci
 \end{itemize}
 
-TODO možná ještě bude potřeba něco dopsat
-
 \subsection{Implementace dělení práce}
+\label{deleni_prace}
 
-TODO Luboš
+V případě, kdy proces D chce darovat procesu T práci, činí tak následovně:
+
+Pokud proces D nemá žádnou práci, případně má práce méně než je stanovená dolní mez pro dělení práce, odmítne D darovat práci T. Dolní mez pro dělení práce je stanovena počtem úrovní zásobníku od maximálního vrcholu, které už jsou na konci iterace -- tj. proces se nebude pokoušet dělit zásobník, pokud mu zbývá řešit stavový prostor příliš malé hloubky.
+
+V opačném případě proces D prochází zásobník odshora (od nejstarších problémů). Pokud najde problém na některé přijatelné úrovni, tento rozdělí na polovinu, tj. odtrhne problém sobě a předá ho procesu T. Procesu T také předá všechny stavy které vedou k danému rozdělenému stavu.
+
+Z následujícíh informací je proces T schopen zcela zrekonstruovat řešený problém a začít s výpočtem.
+
+Stanovené meze dělení práce zajišťují, že nedojde k dělení minimálního množství práce. A to jak v rámci jedné úrovně DFS, tak v případě, že maximální množství zbyvajících stavů procesu D je nízké.
+
+Nevýhodou tohoto dělení je vyšší pravděpodobnost, že dojde k nerovnoměrnému rozdělení práce. Procesy nevidí, jak velký přípustný stavový prostor se skryvá v následujících iteracích stavů na svém zásobníku. Toto je problém vznikající ze zadání úlohy, předpokládáme, že eliminace těchto nerovnoměrností by vyžadovala řádově náročnější algoritmus, zejména paměťově.
+
 
 \subsection{Ukončení výpočtu}
 
@@ -124,9 +137,79 @@ K ukončení výpočtu může dojít dvěma způsoby. První z nich je, že něk
 
 Druhou situací s jakou dojde k ukončení výpočtu je prohledání celého stavového prostoru bez nalezení nejmenšího možného řešení, tedy kostry se stupněm 2. Ukončení výpočtu v takovém případě může inicializovat kterýkoliv procesor. Pokud žádá o práci okolní procesory a přijde mu takový počet odmítnutí, jako je poloviční počet všech procesorů, je velká pravděpodobnost, že žádný procesor již nemá práci. Proto pošle následujícímu procesoru MSG TOKEN WHITE. Procesor, který tento token přijme, pošle ho dalšímu procesoru v případě, že nemá žádnou práci. V opačném případě začne posílat MSG TOKEN BLACK, který fázi ukončování zastaví. Pokud MSG WHITE TOKEN projde přes všechny procesory, dojde k odeslání MSG FINISH a ukončení výpočtu.
 
+
+
 \section{Naměřené výsledky a hodnocení}
 
-Měření pro graf 18-6
+Pro měření paralelních běhů programu jsme vybrali stejné instance problému jako pro řešení sekvenční -- resp. výběr probíhal právě s přihlédnutím k paralelnímu řešení, nikoliv sekvenčnímu.
+
+Problémy obsahující řešení rovné dolní mezi jsme zcela vyřadili z kandidatury na relevantní problémy, protože jejich zpracování paralelním algoritmem má vždy stejný průběh: v náhodném čase z rozsahu \(0..\frac{T}{P}\), kde \(T\) je čas sekvenčního algoritmu prohledávájícího celý stavový prostor a \(P\) je celkový počet procesorů, dojde k ukončení výpočtu z iniciativy libovolného z procesorů.
+
+Vstupní grafy jsou popsány v \ref{grafy}, stručně pak v úvodu každé následující sekce.
+
+\subsection{Měření pro graf A}
+
+Graf bez optimálního řešení (bez kostry stupně 2), s mnoha kostrami stupně 3, rozsáhlý, vyvážený stavový prostor.
+
+Měření grafu A se zaměřuje na rozložení práce mezi procesory v případě, kdy se stavový prostor na začátku zredukuje ihned nalezeným řešením stupně 3 a není optimalizováno až do konce běhu algoritmu. Tj. stavový prostor zůstává nezměnený téměř celou dobu běhu programu.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline \textbf{Počet procesorů} & \textbf{Čas procesoru 0, Ethernet [s]}\\
+\hline 
+\hline 1 & \textbf{2288.95} \\
+\hline 2 &  \textbf{1118.25} \\ 
+\hline 4 &  \textbf{567.93} \\ 
+\hline 8 & \textbf{350.53} \\
+\hline 12 &  \textbf{254.22} \\ 
+\hline 24 &  \textbf{228.63} \\ 
+\hline 32 &  \textbf{215.98} \\ 
+\hline 
+\end{tabular}
+\caption{Doba běhu paralelního algoritmu pro graf A}
+\label{partestB}	
+\end{table}
+
+Graf A generuje pravděpodobně nejjednoduššeji interpretovatelný výsledek. Protože po první sekundě výpočtu nedojde k nálezu lepšího řešení, celý stavový prostor je po celou dobu výpočtu rozdělen rovnoměrně mezi procesory a na konci výpočtu nedochází k hromadnému předávání práce.
+
+Pokud má proces pouze málo práce (viz. \ref{deleni_prace}), s nikým se dále nedělí a procesy tedy postupně upadají do pasivního stavu s očekáváním ukončení výpočtu.
+
+Pozn.: Průměrný čas přes všechny procesy s příbývajícím počtem procesorů klesá od \(\sim 1.0P_0\) pro 1 procesor k \(\sim 0.2P_0\) pro 32 procesorů. Tento nepoměr je dán režijí, kterou v našem případě vykonává pouze proces 0.
+
+
+
+\subsection{Měření pro graf B}
+
+Graf bez optimálního řešení (bez kostry stupně 2), s několika kostrami stupně 3 hluboko uvnitř stavového prostoru. Stavový prostor je rozsáhlý pro kostry stupně 4, minimální pro kostry stupně 3.
+
+Měření grafu A zakládá na faktu, že problém KGM je optimalizující dle nejlepšího aktuálního řešení. V případě nalezení kostry grafu stupně 3 se stavový prostor velice zredukuje a očekáváme, že nastane velká řežije (panika) mezi procesy, které začnou shánět práci - ta bude k dispozici v omezené míře. Nedojde však k okamžitému ukončení výpočtu (bez režije), protože 3 není lower bound problému.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline \textbf{Počet procesorů} & \textbf{Čas procesoru 0, Ethernet [s]} & \textbf{Průměrný čas [\(\sim s\)]}\\
+\hline 
+\hline 1 & \textbf{187.82} & 187.82 \\
+\hline 2 &  \textbf{13.44} & 12.4 \\ 
+\hline 4 &  \textbf{14.1}  & 11.9 \\ 
+\hline 8 &  \textbf{14.15} & 10.8 \\ 
+\hline 12 &  \textbf{5.07} & 1.3 \\ 
+\hline 24 &  \textbf{6.96} & 1.1 \\
+\hline 
+\end{tabular}
+\caption{Doba běhu paralelního algoritmu pro graf B}
+\label{partestB}	
+\end{table}
+
+Test dopadl částečně podle očekávání. Množina testů se rozdělila do 3 kategorií podle toho, jak dlouho ji trvá najít řešení stupně 3. Při nalezení řešení pak hraje roli celkový počet procesorů, který dořeší zbytek stavového prostoru s horní mezí stupně 3.
+
+Očekávaná režije po distribuci nového řešení nebyla naměřena, což neznamená, že nebyla přítomna. Stavový prostor, který zbyl po nalezení kostry stupně 3 byl dostatečně velký, aby se na jeho zpracování projevil celkový počet procesorů.
+
+
+\subsection{Měření pro graf C}
+
+TODO slovo uvodem?
 
 \begin{table}[ht]
 \centering
@@ -140,9 +223,12 @@ Měření pro graf 18-6
 \hline 32 & 67.19 & 47.53 &  \textbf{0.31} \\ 
 \hline 
 \end{tabular}
-\caption{Doba běhu sekvenčního algoritmu pro graf 18-6}
+\caption{Doba běhu paralelního algoritmu pro graf 18-6}
 \label{sekvencni_test}	
 \end{table}
+
+TODO interpretace
+
 
 \section{Závěr}
 
@@ -158,6 +244,11 @@ Měření pro graf 18-6
 {\em EDUX FIT ČVUT}
        {\bf edux.fit.cvut.cz}\\
        \url{https://edux.fit.cvut.cz/courses/MI-PAR/}, [cit. 2011-11-18]
+       
+\bibitem{par}
+{\em Jeremy G. Siek, Lie-Quan Lee, Andrew Lumsdaine }
+       {\bf The Boost Graph Library: User Guide and Reference Manual}\\
+       
        
  \end{thebibliography}
 
